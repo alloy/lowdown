@@ -1,6 +1,6 @@
 # Lowdown
 
-Lowdown is a client for the HTTP/2 version of the Apple Push Notification Service.
+Lowdown is a Ruby client for the HTTP/2 version of the Apple Push Notification Service.
 
 ## Installation
 
