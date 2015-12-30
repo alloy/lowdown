@@ -1,5 +1,4 @@
-require "lowdown/connection"
-require "lowdown/notification"
+require "lowdown/client"
 require "lowdown/version"
 
 module Lowdown

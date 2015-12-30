@@ -15,7 +15,7 @@ class MockAPNS
   end
 
   def self.certificate_with_uid(uid)
-    key = OpenSSL::PKey::RSA.new(512)
+    key = OpenSSL::PKey::RSA.new(1024)
     name = OpenSSL::X509::Name.parse("/UID=#{uid}/CN=Stubbed APNs: #{uid}")
     cert = OpenSSL::X509::Certificate.new
     cert.subject    = name
@@ -43,6 +43,10 @@ class MockAPNS
     URI.parse("https://localhost:#{@ssl.addr[1]}")
   end
 
+  def pkey
+    @context.key
+  end
+
   def certificate
     @context.cert
   end
@@ -51,59 +55,40 @@ class MockAPNS
     @thread = Thread.new do
       loop do
         sock = @ssl.accept
-        #puts 'New TCP connection!'
 
         conn = HTTP2::Server.new
         conn.on(:frame) do |bytes|
-          #puts "Writing bytes: #{bytes.unpack("H*").first}"
           sock.write bytes
         end
-        #conn.on(:frame_sent) do |frame|
-          #puts "Sent frame: #{frame.inspect}"
-        #end
-        #conn.on(:frame_received) do |frame|
-          #puts "Received frame: #{frame.inspect}"
-        #end
 
         conn.on(:stream) do |stream|
-          req, buffer = {}, ''
+          buffer = ''
           request = Request.new
-
-          #stream.on(:active) { puts 'client opened new stream' }
-          #stream.on(:close)  { puts 'stream closed' }
 
           stream.on(:headers) do |h|
             request.headers = Hash[*h.flatten]
-            #puts "request headers: #{h}"
           end
 
           stream.on(:data) do |d|
-            #puts "payload chunk: <<#{d}>>"
             buffer << d
           end
 
           stream.on(:half_close) do
-            #puts 'client closed its end of the stream'
-
             request.body = buffer
             @requests << request
 
-            response = nil
-            if req[':method'] == 'POST'
-              response = "Hello HTTP 2.0! POST payload: #{buffer}"
-            else
-              response = 'Hello HTTP 2.0! GET request'
-            end
+            # APNS only returns a body in case of an error
+            #
+            #response = "Hello HTTP 2.0! POST payload: #{buffer}"
 
             stream.headers({
-              ':status' => '200',
-              'content-length' => response.bytesize.to_s,
-              'content-type' => 'text/plain',
-            }, end_stream: false)
+              ":status" => "200",
+              "apns-id" => request.headers["apns-id"],
+              #"content-length" => response.bytesize.to_s,
+              #"content-type" => "application/json",
+            }, end_stream: true)
 
-            # split response into multiple DATA frames
-            stream.data(response.slice!(0, 5), end_stream: false)
-            stream.data(response)
+            #stream.data(response)
           end
         end
 

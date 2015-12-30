@@ -1,29 +1,28 @@
 require "lowdown/threading"
+require "lowdown/response"
 
 require "http/2"
-require "socket"
-require "uri"
 require "json"
+require "openssl"
+require "uri"
+require "socket"
 
 module Lowdown
   class Connection
-    Response = Struct.new(:notification, :headers, :body)
+    attr_reader :uri, :ssl_context
 
-    def initialize(uri, certificate)
+    def initialize(uri, certificate, key)
       @uri = URI(uri)
-      @certificate = certificate
+
+      @ssl_context = OpenSSL::SSL::SSLContext.new
+      @ssl_context.key = key
+      @ssl_context.cert = certificate
     end
 
     def open
-      @main_queue = Threading::DispatchQueue.new
-      @work_queue = Threading::DispatchQueue.new
-      @requests   = Threading::Counter.new
-
-      context = OpenSSL::SSL::SSLContext.new
-      context.cert = @certificate
       @socket = TCPSocket.new(@uri.host, @uri.port)
 
-      @ssl = OpenSSL::SSL::SSLSocket.new(@socket, context)
+      @ssl = OpenSSL::SSL::SSLSocket.new(@socket, @ssl_context)
       @ssl.sync_close = true
       @ssl.hostname = @uri.hostname
       @ssl.connect
@@ -34,30 +33,25 @@ module Lowdown
         @ssl.flush
       end
 
-      @thread = Thread.new do
-        Thread.current.abort_on_exception = true
-        until Thread.current[:should_exit] || @ssl.closed?
-          @work_queue.drain!
-          begin
-            data = @ssl.read_nonblock(1024)
-            begin
-              @http << data
-            rescue => e
-              puts "Exception: #{e}, #{e.message} - closing socket."
-              @ssl.close
-            end
-          rescue IO::WaitReadable
-            # Reading would block.
-          end
-        end
-      end
+      @main_queue = Threading::DispatchQueue.new
+      @work_queue = Threading::DispatchQueue.new
+      @requests   = Threading::Counter.new
+      @exceptions = Queue.new
+
+      start_worker_thread!
     end
 
+    # Terminates the worker thread and closes the socket. Finally it peforms one more check for pending jobs dispatched
+    # onto the main thread.
+    #
     def close
-      flush
-      @thread[:should_exit] = true
-      @thread.join
+      @worker_thread[:should_exit] = true
+      @worker_thread.join
+
       @ssl.close
+
+      sleep 0.1
+      @main_queue.drain!
     end
 
     def flush
@@ -67,52 +61,88 @@ module Lowdown
       end
     end
 
-    def post(notification, &callback)
-      @requests.increase!
+    def post(path, headers, body, &callback)
+      request('POST', path, headers, body, &callback)
+    end
 
+    private
+
+    def request(method, path, custom_headers, body, &callback)
+      @requests.increment!
       @work_queue.dispatch do
-        uri = @uri + "/3/device/#{notification.token}"
-        response = Response.new(notification)
+        headers = { ":method" => method.to_s, ":path" => path.to_s, "content-length" => body.bytesize.to_s }
+        custom_headers.each { |k, v| headers[k] = v.to_s }
+
         stream = @http.new_stream
+        response = Response.new
+
+        stream.on(:headers) do |response_headers|
+          response.headers = Hash[*response_headers.flatten]
+        end
+
+        stream.on(:data) do |response_data|
+          response.raw_body ||= ''
+          response.raw_body << response_data
+        end
 
         stream.on(:close) do
           @main_queue.dispatch do
-            callback.call(response) if callback
-            @requests.decrease!
+            callback.call(response)
+            @requests.decrement!
           end
         end
-
-        #stream.on(:half_close) do
-          #puts 'closing client-end of the stream'
-        #end
-
-        stream.on(:headers) do |headers|
-          response.headers = headers
-        end
-
-        stream.on(:data) do |data|
-          response.body ||= ''
-          response.body << data
-        end
-
-        body = notification.payload.to_json
-        headers = {
-          ":method"         => "POST",
-          ":path"           => uri.path,
-          "content-length"  => body.bytesize.to_s,
-          "apns-id"         => notification.id.to_s,
-          "apns-expiration" => notification.expiration.to_i.to_s,
-          "apns-priority"   => notification.priority.to_s,
-          "apns-topic"      => notification.topic,
-        }
 
         stream.headers(headers, end_stream: false)
         stream.data(body, end_stream: true)
       end
 
-      # The caller might be posting many notifications, so use this time to
-      # also dispatch work onto the main thread.
+      # The caller might be posting many notifications, so use this time to also dispatch work onto the main thread.
       @main_queue.drain!
+    end
+
+    def start_worker_thread!
+      @worker_thread = Thread.new do
+        until Thread.current[:should_exit] || @ssl.closed?
+          # Run any dispatched jobs that add new requests.
+          #
+          # Re-raising a worker exception aids the development process. In production there’s no reason why this should
+          # raise at all.
+          if exception = @work_queue.drain!
+            exception_occurred_in_worker(exception)
+          end
+
+          # Try to read data from the SSL socket without blocking. If it would block, catch the exception and restart
+          # the loop.
+          begin
+            data = @ssl.read_nonblock(1024)
+          rescue IO::WaitReadable
+            data = nil
+          rescue EOFError => exception
+            exception_occurred_in_worker(exception)
+            Thread.current[:should_exit] = true
+            data = nil
+          end
+
+          # Process incoming HTTP data. If any processing exception occurs, fail the whole process.
+          if data
+            begin
+              @http << data
+            rescue Exception => exception
+              @ssl.close
+              exception_occurred_in_worker(exception)
+            end
+          end
+        end
+      end
+    end
+
+    # Raise the exception on the main thread and reset the number of in-flight requests so that a potential blocked
+    # caller of `Connection#flush` will continue.
+    #
+    def exception_occurred_in_worker(exception)
+      @exceptions << exception
+      @main_queue.dispatch { raise @exceptions.pop }
+      @requests.value = @http.active_stream_count
     end
   end
 end

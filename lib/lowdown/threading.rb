@@ -15,20 +15,30 @@ module Lowdown
         @queue.empty?
       end
 
-      def drain!
-        @queue.pop.call until empty?
+      # Performs the number of dispatched blocks that were on the queue at the moment of calling #drain!. Unlike
+      # performing blocks _until the queue is empty_, this ensures that it doesn’t block the calling thread too long if
+      # another thread is dispatching more work at the same time.
+      #
+      # By default this will let any exceptions bubble up on the main thread or catch and return them on other threads.
+      #
+      def drain!(rescue_exceptions = (Thread.current != Thread.main))
+        @queue.size.times { @queue.pop.call }
+        nil
+      rescue Exception => exception
+        raise unless rescue_exceptions
+        exception
       end
     end
 
     class Counter
       def initialize(value = 0)
         @value = value
-        @lock = Mutex.new
+        @mutex = Mutex.new
       end
 
       def value
         value = nil
-        @lock.synchronize { value = @value }
+        @mutex.synchronize { value = @value }
         value
       end
 
@@ -36,12 +46,17 @@ module Lowdown
         value.zero?
       end
 
-      def increase!
-        @lock.synchronize { @value += 1 }
+      def value=(value)
+        @mutex.synchronize { @value = value }
+        value
       end
 
-      def decrease!
-        @lock.synchronize { @value -= 1 }
+      def increment!
+        @mutex.synchronize { @value += 1 }
+      end
+
+      def decrement!
+        @mutex.synchronize { @value -= 1 }
       end
     end
   end
