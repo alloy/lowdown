@@ -30,11 +30,13 @@ module Lowdown
       end
 
       it "configures a connection to the production environment" do
+        @certificate.certificate.extensions = [OpenSSL::X509::Extension.new(Certificate::PRODUCTION_ENV_EXTENSION, "..")]
         client = Client.production(true, @certificate)
         client.connection.uri.must_equal Client::PRODUCTION_URI
       end
 
       it "configures a connection to the development environment" do
+        @certificate.certificate.extensions = [OpenSSL::X509::Extension.new(Certificate::DEVELOPMENT_ENV_EXTENSION, "..")]
         client = Client.production(false, @certificate)
         client.connection.uri.must_equal Client::DEVELOPMENT_URI
       end

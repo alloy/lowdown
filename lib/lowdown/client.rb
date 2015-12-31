@@ -11,15 +11,21 @@ module Lowdown
     PRODUCTION_URI = URI.parse("https://api.push.apple.com:443")
 
     def self.production(production, certificate_or_data)
-      client(production ? PRODUCTION_URI : DEVELOPMENT_URI, certificate_or_data)
+      certificate = Lowdown.Certificate(certificate_or_data)
+      if production
+        unless certificate.production?
+          raise ArgumentError, "The specified certificate is not usable with the production environment."
+        end
+      else
+        unless certificate.development?
+          raise ArgumentError, "The specified certificate is not usable with the development environment."
+        end
+      end
+      client(production ? PRODUCTION_URI : DEVELOPMENT_URI, certificate)
     end
 
     def self.client(uri, certificate_or_data)
-      if certificate_or_data.is_a?(Certificate)
-        certificate = certificate_or_data
-      else
-        certificate = Certificate.from_pem_data(certificate_or_data)
-      end
+      certificate = Lowdown.Certificate(certificate_or_data)
       default_topic = certificate.topics.first if certificate.universal?
       new(Connection.new(uri, certificate.ssl_context), default_topic)
     end

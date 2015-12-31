@@ -1,14 +1,22 @@
 require "openssl"
 
 module Lowdown
+  def self.Certificate(certificate_or_data)
+    if certificate_or_data.is_a?(Certificate)
+      certificate_or_data
+    else
+      Certificate.from_pem_data(certificate_or_data)
+    end
+  end
+
   class Certificate
     # http://images.apple.com/certificateauthority/pdf/Apple_WWDR_CPS_v1.13.pdf
     DEVELOPMENT_ENV_EXTENSION       = "1.2.840.113635.100.6.3.1".freeze
     PRODUCTION_ENV_EXTENSION        = "1.2.840.113635.100.6.3.2".freeze
     UNIVERSAL_CERTIFICATE_EXTENSION = "1.2.840.113635.100.6.3.6".freeze
 
-    def self.from_pem_data(data)
-      key = OpenSSL::PKey::RSA.new(data, nil)
+    def self.from_pem_data(data, passphrase = nil)
+      key = OpenSSL::PKey::RSA.new(data, passphrase)
       certificate = OpenSSL::X509::Certificate.new(data)
       new(key, certificate)
     end
