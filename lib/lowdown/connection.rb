@@ -2,7 +2,6 @@ require "lowdown/threading"
 require "lowdown/response"
 
 require "http/2"
-require "json"
 require "openssl"
 require "uri"
 require "socket"

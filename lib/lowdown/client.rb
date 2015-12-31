@@ -3,6 +3,7 @@ require "lowdown/connection"
 require "lowdown/notification"
 
 require "uri"
+require "json"
 
 module Lowdown
   class Client
