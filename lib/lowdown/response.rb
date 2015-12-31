@@ -52,7 +52,10 @@ module Lowdown
     end
 
     def to_s
-      "#{status} (#{message})#{": #{failure_reason}" unless success?}"
+      s = "#{status} (#{message})"
+      s << ": #{failure_reason}" unless success?
+      s << " last checked at #{validity_last_checked_at}" if invalid_token?
+      s
     end
 
     def inspect
