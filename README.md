@@ -22,7 +22,7 @@ Or install it yourself as:
 
 ## Usage
 
-You can use the `lowdown` bin that comes with this gem or in code at it’s simplest:
+You can use the `lowdown` bin that comes with this gem or in code at its simplest:
 
 ```ruby
 notification = Lowdown::Notification.new(:token => "device-token", :payload => { :alert => "Hello World!" })
