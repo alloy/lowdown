@@ -18,6 +18,9 @@ Gem::Specification.new do |spec|
   spec.executables   = "lowdown"
   spec.require_paths = ["lib"]
 
+  # This is currently set to >= 2.0.0 in the http-2 gemspec, which is incorrect, as it uses required keyword arguments.
+  spec.required_ruby_version = '>= 2.1.0'
+
   spec.add_runtime_dependency "http-2", ">= 0.8"
 
   spec.add_development_dependency "bundler", "~> 1.11"
