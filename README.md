@@ -20,7 +20,21 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+You can use the `lowdown` bin that comes with this gem or in code at it’s simplest:
+
+```ruby
+notification = Lowdown::Notification.new(:token => "device-token", :payload => { :alert => "Hello World!" })
+
+Lowdown::Client.production(true, File.read("path/to/certificate.pem")).connect do |client|
+  client.send_notification(notification) do |response|
+    if response.success?
+      puts "Notification sent"
+    else
+      puts "Notification failed: #{response}"
+    end
+  end
+end
+```
 
 ## Contributing
 
