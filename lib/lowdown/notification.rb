@@ -1,9 +1,15 @@
 module Lowdown
+  # For payload documentation see: https://developer.apple.com/library/ios/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/Chapters/TheNotificationPayload.html#//apple_ref/doc/uid/TP40008194-CH107-SW1
+  #
   class Notification
     attr_accessor :token, :id, :expiration, :priority, :topic, :payload
 
     def initialize(params)
       params.each { |key, value| send("#{key}=", value) }
+    end
+
+    def valid?
+      !!(@token && @payload)
     end
 
     def formatted_id

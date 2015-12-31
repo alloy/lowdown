@@ -50,6 +50,8 @@ module Lowdown
     end
 
     def send_notification(notification, &callback)
+      raise ArgumentError, "Invalid notification: #{notification.inspect}" unless notification.valid?
+
       topic = notification.topic || @default_topic
       headers = {}
       headers["apns-expiration"] = (notification.expiration || 0).to_i
