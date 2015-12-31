@@ -1,3 +1,4 @@
+require "lowdown/certificate"
 require "lowdown/connection"
 require "lowdown/notification"
 
@@ -8,27 +9,35 @@ module Lowdown
     DEVELOPMENT_URI = URI.parse("https://api.development.push.apple.com:443")
     PRODUCTION_URI = URI.parse("https://api.push.apple.com:443")
 
+    def self.production(production, certificate_or_data)
+      client(production ? PRODUCTION_URI : DEVELOPMENT_URI, certificate_or_data)
+    end
+
+    def self.client(uri, certificate_or_data)
+      if certificate_or_data.is_a?(Certificate)
+        certificate = certificate_or_data
+      else
+        certificate = Certificate.from_pem_data(certificate_or_data)
+      end
+      default_topic = certificate.topics.first if certificate.universal?
+      new(Connection.new(uri, certificate.ssl_context), default_topic)
+    end
+
     attr_reader :connection, :default_topic
 
-    def initialize(uri, certificate_data)
-      certificate = OpenSSL::X509::Certificate.new(certificate_data)
-      pkey = OpenSSL::PKey::RSA.new(certificate_data, nil)
-
-      # TODO The docs say that topic can be optional, but it seems required in our case.
-      #      Figure out if it’s because we have a watch app and if that's encoded into the
-      #      certificate and base us including the default topic on that.
-      #
-      #      See section about the `1.2.840.113635.100.6.3.6` certificate extension:
-      #      https://developer.apple.com/library/ios/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/Chapters/APNsProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH101-SW1
-      #
-      _, bundle_id, __ = certificate.subject.to_a.find { |key, *_| key == 'UID' }
-      @default_topic = bundle_id
-
-      @connection = Connection.new(uri, certificate, pkey)
+    def initialize(connection, default_topic = nil)
+      @connection, @default_topic = connection, default_topic
     end
 
     def connect
       @connection.open
+      if block_given?
+        begin
+          yield self
+        ensure
+          close
+        end
+      end
     end
 
     def flush
@@ -40,14 +49,14 @@ module Lowdown
     end
 
     def send_notification(notification, &callback)
-      body = { :aps => notification.payload }.to_json
+      topic = notification.topic || @default_topic
+      headers = {}
+      headers["apns-expiration"] = (notification.expiration || 0).to_i
+      headers["apns-id"]         = notification.formatted_id if notification.id
+      headers["apns-priority"]   = notification.priority     if notification.priority
+      headers["apns-topic"]      = topic                     if topic
 
-      headers = {
-        "apns-expiration" => (notification.expiration || 0).to_i,
-        "apns-topic"      => notification.topic || @default_topic,
-      }
-      headers["apns-id"]       = notification.formatted_id if notification.id
-      headers["apns-priority"] = notification.priority     if notification.priority
+      body = { :aps => notification.payload }.to_json
 
       @connection.post("/3/device/#{notification.token}", headers, body, &callback)
     end

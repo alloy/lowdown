@@ -11,12 +11,8 @@ module Lowdown
   class Connection
     attr_reader :uri, :ssl_context
 
-    def initialize(uri, certificate, key)
-      @uri = URI(uri)
-
-      @ssl_context = OpenSSL::SSL::SSLContext.new
-      @ssl_context.key = key
-      @ssl_context.cert = certificate
+    def initialize(uri, ssl_context)
+      @uri, @ssl_context = URI(uri), ssl_context
     end
 
     def open
@@ -33,18 +29,23 @@ module Lowdown
         @ssl.flush
       end
 
-      @main_queue = Threading::DispatchQueue.new
-      @work_queue = Threading::DispatchQueue.new
-      @requests   = Threading::Counter.new
-      @exceptions = Queue.new
+      @main_queue    = Threading::DispatchQueue.new
+      @work_queue    = Threading::DispatchQueue.new
+      @requests      = Threading::Counter.new
+      @exceptions    = Queue.new
+      @worker_thread = start_worker_thread!
+    end
 
-      start_worker_thread!
+    def open?
+      !@ssl.nil? && !@ssl.closed?
     end
 
     # Terminates the worker thread and closes the socket. Finally it peforms one more check for pending jobs dispatched
     # onto the main thread.
     #
     def close
+      flush
+
       @worker_thread[:should_exit] = true
       @worker_thread.join
 
@@ -52,6 +53,8 @@ module Lowdown
 
       sleep 0.1
       @main_queue.drain!
+
+      @socket = @ssl = @http = @main_queue = @work_queue = @requests = @exceptions = @worker_thread = nil
     end
 
     def flush
@@ -101,7 +104,7 @@ module Lowdown
     end
 
     def start_worker_thread!
-      @worker_thread = Thread.new do
+      Thread.new do
         until Thread.current[:should_exit] || @ssl.closed?
           # Run any dispatched jobs that add new requests.
           #

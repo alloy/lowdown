@@ -5,7 +5,10 @@ describe Lowdown::Connection do
 
   before do
     server ||= MockAPNS.new.tap(&:run)
-    @connection = Lowdown::Connection.new(server.uri, server.certificate, server.pkey)
+    ssl_context = OpenSSL::SSL::SSLContext.new
+    ssl_context.cert = server.certificate
+    ssl_context.key = server.pkey
+    @connection = Lowdown::Connection.new(server.uri, ssl_context)
   end
 
   #it "uses the certificate to connect" do
@@ -14,6 +17,14 @@ describe Lowdown::Connection do
     #connection = Lowdown::Connection.new(server.uri, other_cert)
     #lambda { connection.open }.must_raise(OpenSSL::SSL::SSLError)
   #end
+
+  it "returns whether or not the connection is open" do
+    @connection.open?.must_equal false
+    @connection.open
+    @connection.open?.must_equal true
+    @connection.close
+    @connection.open?.must_equal false
+  end
 
   describe "when making a request" do
     before do
