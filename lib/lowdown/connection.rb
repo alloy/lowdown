@@ -6,6 +6,20 @@ require "openssl"
 require "uri"
 require "socket"
 
+# Monkey-patch http-2 gem until this PR is merged: https://github.com/igrigorik/http-2/pull/44
+if HTTP2::VERSION == "0.8.0"
+  class HTTP2::Client
+    def connection_management(frame)
+      if @state == :waiting_connection_preface
+        send_connection_preface
+        connection_settings(frame)
+      else
+        super(frame)
+      end
+    end
+  end
+end
+
 module Lowdown
   class Connection
     attr_reader :uri, :ssl_context
