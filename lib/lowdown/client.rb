@@ -65,7 +65,7 @@ module Lowdown
       headers["apns-priority"]   = notification.priority     if notification.priority
       headers["apns-topic"]      = topic                     if topic
 
-      body = { :aps => notification.payload }.to_json
+      body = notification.formatted_payload.to_json
 
       @connection.post("/3/device/#{notification.token}", headers, body, &callback)
     end

@@ -81,7 +81,7 @@ module Lowdown
       describe "when sending a notification" do
         before do
           @notification = Lowdown::Notification.new(
-            :payload => { :alert => "Push it real good." },
+            :payload => { :alert => "Push it real good.", :url => "http://example/custom-attribute" },
             :token => "some-device-token",
             :id => 42,
             :expiration => Time.now,
@@ -95,9 +95,8 @@ module Lowdown
             @client.send_notification(@notification)
           end
 
-          it "sends the payload JSON encoded" do
-            payload = { :aps => @notification.payload }
-            @connection.body.must_equal payload.to_json
+          it "sends the formatted payload JSON encoded" do
+            @connection.body.must_equal @notification.formatted_payload.to_json
           end
 
           it "uses the device token in the request path" do
