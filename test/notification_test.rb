@@ -31,6 +31,11 @@ module Lowdown
         notification = Notification.new(:payload => @formatted_payload)
         notification.formatted_payload.must_equal(@formatted_payload)
       end
+
+      it "does not include entries with `nil` values when splitting data" do
+        notification = Notification.new(:payload => { "alert" => "included", "badge" => nil })
+        notification.formatted_payload.must_equal("aps" => { "alert" => "included" })
+      end
     end
   end
 end

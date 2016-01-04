@@ -28,6 +28,7 @@ module Lowdown
         payload = {}
         payload["aps"] = aps = {}
         @payload.each do |key, value|
+          next if value.nil?
           key = key.to_s
           if APS_KEYS.include?(key)
             aps[key] = value
