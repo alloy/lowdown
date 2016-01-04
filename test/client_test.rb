@@ -1,24 +1,5 @@
 require "test_helper"
-
-class ConnectionMock < Struct.new(:path, :headers, :body)
-  def post(path, headers, body)
-    self.path = path
-    self.headers = headers
-    self.body = body
-  end
-
-  def open
-    @open = true
-  end
-
-  def close
-    @open = false
-  end
-
-  def open?
-    !!@open
-  end
-end
+require "lowdown/connection/mock"
 
 module Lowdown
   describe Client do
@@ -67,7 +48,7 @@ module Lowdown
 
     describe "when initialized" do
       before do
-        @connection = ConnectionMock.new
+        @connection = Connection::Mock.new
         @client = Client.new(@connection, "com.example.MockAPNS")
       end
 
@@ -92,31 +73,32 @@ module Lowdown
 
         describe "in general" do
           before do
-            @client.send_notification(@notification)
+            @client.send_notification(@notification) {}
+            @request = @connection.requests.last
           end
 
           it "sends the formatted payload JSON encoded" do
-            @connection.body.must_equal @notification.formatted_payload.to_json
+            @request.body.must_equal @notification.formatted_payload.to_json
           end
 
           it "uses the device token in the request path" do
-            @connection.path.must_equal "/3/device/some-device-token"
+            @request.path.must_equal "/3/device/some-device-token"
           end
 
           it "specifies the notification identifier" do
-            @connection.headers["apns-id"].must_equal @notification.formatted_id
+            @request.headers["apns-id"].must_equal @notification.formatted_id
           end
 
           it "specifies the expiration time" do
-            @connection.headers["apns-expiration"].must_equal @notification.expiration.to_i
+            @request.headers["apns-expiration"].must_equal @notification.expiration.to_i
           end
 
           it "specifies the priority" do
-            @connection.headers["apns-priority"].must_equal 10
+            @request.headers["apns-priority"].must_equal 10
           end
 
           it "specifies the topic" do
-            @connection.headers["apns-topic"].must_equal "com.example.MockAPNS.voip"
+            @request.headers["apns-topic"].must_equal "com.example.MockAPNS.voip"
           end
         end
 
@@ -126,20 +108,21 @@ module Lowdown
             @notification.id = nil
             @notification.priority = nil
             @notification.topic = nil
-            @client.send_notification(@notification)
+            @client.send_notification(@notification) {}
+            @request = @connection.requests.last
           end
 
           it "defaults the expiration time to 0" do
-            @connection.headers["apns-expiration"].must_equal 0
+            @request.headers["apns-expiration"].must_equal 0
           end
 
           it "defaults the topic to the one extracted from the certificate" do
-            @connection.headers["apns-topic"].must_equal "com.example.MockAPNS"
+            @request.headers["apns-topic"].must_equal "com.example.MockAPNS"
           end
 
           %w{ apns-id apns-priority }.each do |key|
             it "omits the #{key} header" do
-              @connection.headers.has_key?(key).must_equal false
+              @request.headers.has_key?(key).must_equal false
             end
           end
         end
