@@ -11,19 +11,19 @@ module Lowdown
     describe "concerning payload" do
       before do
         @formatted_payload = {
-          :aps => {
-            :alert => "aps",
-            :badge => "aps",
-            :sound => "aps",
-            :content_available => "aps",
-            :category => "aps",
+          "aps" => {
+            "alert" => "aps",
+            "badge" => "aps",
+            "sound" => "aps",
+            "content-available" => "aps",
+            "category" => "aps",
           },
-          :url => "custom",
+          "url" => "custom",
         }
       end
 
       it "splits the payload into aps and custom data" do
-        notification = Notification.new(:payload => @formatted_payload[:aps].merge(:url => "custom"))
+        notification = Notification.new(:payload => @formatted_payload["aps"].merge("url" => "custom"))
         notification.formatted_payload.must_equal(@formatted_payload)
       end
 

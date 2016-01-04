@@ -2,7 +2,7 @@ module Lowdown
   # For payload documentation see: https://developer.apple.com/library/ios/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/Chapters/TheNotificationPayload.html#//apple_ref/doc/uid/TP40008194-CH107-SW1
   #
   class Notification
-    APS_KEYS = [:alert, :badge, :sound, :content_available, :category].freeze
+    APS_KEYS = %w{ alert badge sound content-available category }.freeze
 
     attr_accessor :token, :id, :expiration, :priority, :topic, :payload
 
@@ -22,13 +22,13 @@ module Lowdown
     end
 
     def formatted_payload
-      if @payload.has_key?(:aps)
+      if @payload.has_key?("aps")
         @payload
       else
         payload = {}
-        payload[:aps] = aps = {}
+        payload["aps"] = aps = {}
         @payload.each do |key, value|
-          key = key.to_sym
+          key = key.to_s
           if APS_KEYS.include?(key)
             aps[key] = value
           else
