@@ -2,6 +2,8 @@
 
 Lowdown is a Ruby client for the HTTP/2 version of the Apple Push Notification Service.
 
+Multiple notifications are multiplexed for efficiency.
+
 NOTE: _It is not yet battle-tested and there is no documentation yet. This will all follow over the next few weeks._
 
 ## Installation
