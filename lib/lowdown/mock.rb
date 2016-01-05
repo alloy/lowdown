@@ -1,14 +1,42 @@
+require "lowdown/certificate"
+require "lowdown/client"
 require "lowdown/response"
 
 module Lowdown
-  class Connection
-    class Mock
+  module Mock
+    def self.ssl_certificate_and_key(app_bundle_id)
+      key = OpenSSL::PKey::RSA.new(1024)
+      name = OpenSSL::X509::Name.parse("/UID=#{app_bundle_id}/CN=Stubbed APNS Certificate: #{app_bundle_id}")
+      cert = OpenSSL::X509::Certificate.new
+      cert.subject    = name
+      cert.not_before = Time.now
+      cert.not_after  = cert.not_before + 3600
+      cert.public_key = key.public_key
+      cert.sign(key, OpenSSL::Digest::SHA1.new)
+      [cert, key]
+    end
+
+    def self.certificate(app_bundle_id)
+      Certificate.new(*ssl_certificate_and_key(app_bundle_id))
+    end
+
+    def self.client(uri: nil, app_bundle_id: nil)
+      ssl_context = certificate(app_bundle_id).ssl_context if app_bundle_id
+      Client.new(Connection.new(uri: uri, ssl_context: ssl_context), app_bundle_id)
+    end
+
+    class Connection
       Request = Struct.new(:path, :headers, :body, :response)
 
+      # Mock API
       attr_reader :requests, :responses
 
-      def initialize(responses = [])
-        @responses = responses
+      # Real API
+      attr_reader :uri, :ssl_context
+
+      def initialize(uri: uri, ssl_context: nil)
+        @uri, @ssl_context = uri, ssl_context
+        @responses = []
         @requests = []
       end
 

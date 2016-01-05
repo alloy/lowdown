@@ -1,9 +1,10 @@
 require "test_helper"
+require "lowdown/mock"
 
 module Lowdown
   describe Certificate do
     before do
-      @key, @cert = MockAPNS.certificate_with_uid("com.example.MockAPNS")
+      @cert, @key = Mock.ssl_certificate_and_key("com.example.MockAPNS")
       @certificate = Certificate.new(@cert, @key)
     end
 

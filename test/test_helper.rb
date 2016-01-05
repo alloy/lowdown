@@ -4,8 +4,6 @@ require 'lowdown'
 require 'minitest/spec'
 require 'minitest/autorun'
 
-require "openssl"
-
 class MockAPNS
   class Request < Struct.new(:headers, :body)
     def initialize(*)
@@ -14,27 +12,15 @@ class MockAPNS
     end
   end
 
-  def self.certificate_with_uid(uid)
-    key = OpenSSL::PKey::RSA.new(1024)
-    name = OpenSSL::X509::Name.parse("/UID=#{uid}/CN=Stubbed APNs: #{uid}")
-    cert = OpenSSL::X509::Certificate.new
-    cert.subject    = name
-    cert.not_before = Time.now
-    cert.not_after  = cert.not_before + 3600
-    cert.public_key = key.public_key
-    cert.sign(key, OpenSSL::Digest::SHA1.new)
-    [key, cert]
-  end
-
   attr_reader :requests
 
   def initialize
     @requests = []
 
-    @context = OpenSSL::SSL::SSLContext.new
+    require "lowdown/mock"
+    @context = Lowdown::Mock.certificate("com.example.MockAPNS").ssl_context
     # TODO figure out how to make the cert cerification work.
     #@context.verify_mode = OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
-    @context.key, @context.cert = self.class.certificate_with_uid("com.example.MockAPNS")
 
     @ssl = OpenSSL::SSL::SSLServer.new(TCPServer.new(0), @context)
   end

@@ -1,12 +1,11 @@
 require "test_helper"
-require "lowdown/connection/mock"
+require "lowdown/mock"
 
 module Lowdown
   describe Client do
     describe "concerning initialization" do
       before do
-        key, cert = MockAPNS.certificate_with_uid("com.example.MockAPNS")
-        @certificate = Certificate.new(cert, key)
+        @certificate = Mock.certificate("com.example.MockAPNS")
         @uri = Client::DEVELOPMENT_URI
       end
 
@@ -48,7 +47,7 @@ module Lowdown
 
     describe "when initialized" do
       before do
-        @connection = Connection::Mock.new
+        @connection = Mock::Connection.new
         @client = Client.new(@connection, "com.example.MockAPNS")
       end
 
