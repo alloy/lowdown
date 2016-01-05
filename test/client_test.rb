@@ -6,7 +6,7 @@ module Lowdown
     describe "concerning initialization" do
       before do
         key, cert = MockAPNS.certificate_with_uid("com.example.MockAPNS")
-        @certificate = Certificate.new(key, cert)
+        @certificate = Certificate.new(cert, key)
         @uri = Client::DEVELOPMENT_URI
       end
 

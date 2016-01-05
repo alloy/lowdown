@@ -18,17 +18,17 @@ module Lowdown
     def self.from_pem_data(data, passphrase = nil)
       key = OpenSSL::PKey::RSA.new(data, passphrase)
       certificate = OpenSSL::X509::Certificate.new(data)
-      new(key, certificate)
+      new(certificate, key)
     end
 
     attr_reader :key, :certificate
 
-    def initialize(key, certificate)
+    def initialize(certificate, key = nil)
       @key, @certificate = key, certificate
     end
 
     def to_pem
-      "#{@key.to_pem}\n#{@certificate.to_pem}"
+      [@key, @certificate].compact.map(&:to_pem).join("\n")
     end
 
     def ssl_context
@@ -59,14 +59,14 @@ module Lowdown
       end
     end
 
+    def app_bundle_id
+      @certificate.subject.to_a.find { |key, *_| key == 'UID' }[1]
+    end
+
     private
 
     def extension(oid)
       @certificate.extensions.find { |ext| ext.oid == oid }
-    end
-
-    def app_bundle_id
-      @certificate.subject.to_a.find { |key, *_| key == 'UID' }[1]
     end
   end
 end

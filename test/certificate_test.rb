@@ -4,12 +4,11 @@ module Lowdown
   describe Certificate do
     before do
       @key, @cert = MockAPNS.certificate_with_uid("com.example.MockAPNS")
-      @certificate = Certificate.new(@key, @cert)
+      @certificate = Certificate.new(@cert, @key)
     end
 
     it "initializes with cert and key PEM data" do
-      data = [@key, @cert].map(&:to_pem).join("\n")
-      certificate = Certificate.from_pem_data(data)
+      certificate = Certificate.from_pem_data(@certificate.to_pem)
       certificate.key.to_pem.must_equal @key.to_pem
       certificate.certificate.to_pem.must_equal @cert.to_pem
     end
