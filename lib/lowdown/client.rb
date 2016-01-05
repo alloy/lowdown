@@ -26,8 +26,11 @@ module Lowdown
 
     def self.client(uri, certificate_or_data)
       certificate = Lowdown.Certificate(certificate_or_data)
-      default_topic = certificate.topics.first if certificate.universal?
-      new(Connection.new(uri, certificate.ssl_context), default_topic)
+      client_with_connection(Connection.new(uri, certificate.ssl_context), certificate)
+    end
+
+    def self.client_with_connection(connection, certificate)
+      new(connection, certificate.universal? ? certificate.topics.first : nil)
     end
 
     attr_reader :connection, :default_topic

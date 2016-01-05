@@ -13,6 +13,11 @@ module Lowdown
       cert.not_after  = cert.not_before + 3600
       cert.public_key = key.public_key
       cert.sign(key, OpenSSL::Digest::SHA1.new)
+
+      # Make it a Universal Certificate
+      ext_name = Lowdown::Certificate::UNIVERSAL_CERTIFICATE_EXTENSION
+      cert.extensions = [OpenSSL::X509::Extension.new(ext_name, "0d..#{app_bundle_id}0...app")]
+
       [cert, key]
     end
 
@@ -20,9 +25,10 @@ module Lowdown
       Certificate.new(*ssl_certificate_and_key(app_bundle_id))
     end
 
-    def self.client(uri: nil, app_bundle_id: nil)
-      ssl_context = certificate(app_bundle_id).ssl_context if app_bundle_id
-      Client.new(Connection.new(uri: uri, ssl_context: ssl_context), app_bundle_id)
+    def self.client(uri: nil, app_bundle_id: "com.example.MockApp")
+      certificate = certificate(app_bundle_id)
+      connection = Connection.new(uri: uri, ssl_context: certificate.ssl_context)
+      Client.client_with_connection(connection, certificate)
     end
 
     class Connection
@@ -34,7 +40,7 @@ module Lowdown
       # Real API
       attr_reader :uri, :ssl_context
 
-      def initialize(uri: uri, ssl_context: nil)
+      def initialize(uri: nil, ssl_context: nil)
         @uri, @ssl_context = uri, ssl_context
         @responses = []
         @requests = []

@@ -34,6 +34,10 @@ module Lowdown
     end
 
     describe "with a non-universal certificate" do
+      before do
+        @cert.extensions = []
+      end
+
       it "returns that it’s not a universal certificate" do
         @certificate.universal?.must_equal false
       end

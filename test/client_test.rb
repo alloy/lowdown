@@ -33,13 +33,13 @@ module Lowdown
       end
 
       it "has no default topic if the certificate is not a Universal Certificate" do
+        @certificate.certificate.extensions = []
         client = Client.client(@uri, @certificate)
         client.default_topic.must_equal nil
       end
 
       it "uses the app bundle ID as the default topic in case of a Universal Certificate" do
 
-        @certificate.certificate.extensions = [OpenSSL::X509::Extension.new(Certificate::UNIVERSAL_CERTIFICATE_EXTENSION, "0d..com.example.MockAPNS0...app")]
         client = Client.client(@uri, @certificate)
         client.default_topic.must_equal "com.example.MockAPNS"
       end
