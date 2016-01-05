@@ -45,7 +45,7 @@ OPTION_PARSER = OptionParser.new do |opts|
     options[:topic] = topic
   end
 
-  opts.on("-e", "--environment ENV", "Environment to send push notification (production or development), defaults to certificate purpose or development") do |env|
+  opts.on("-e", "--environment ENV", "Environment to send push notification (production or development), defaults to production if the certificate supports that or otherwise development") do |env|
     options[:env] = env
   end
 
@@ -81,10 +81,10 @@ if options[:env]
   end
   production = options[:env] == "production"
 else
-  if certificate.development?
-    production = false
-  elsif certificate.production?
+  if certificate.production?
     production = true
+  elsif certificate.development?
+    production = false
   end
 end
 
