@@ -1,5 +1,7 @@
 # Lowdown
 
+![](https://travis-ci.org/alloy/lowdown.svg?branch=master)
+
 Lowdown is a Ruby client for the HTTP/2 version of the Apple Push Notification Service.
 
 Multiple notifications are multiplexed for efficiency.
