@@ -1,3 +1,5 @@
+![](https://raw.githubusercontent.com/alloy/lowdown/master/doc/lowdown.png)
+
 # Lowdown
 
 [![Build Status](https://travis-ci.org/alloy/lowdown.svg?branch=master)](https://travis-ci.org/alloy/lowdown)
@@ -6,7 +8,7 @@ Lowdown is a Ruby client for the HTTP/2 version of the Apple Push Notification S
 
 Multiple notifications are multiplexed for efficiency.
 
-NOTE: _It is not yet battle-tested and there is no documentation yet. This will all follow over the next few weeks._
+NOTE: _It is not yet battle-tested. This will all follow over the next few weeks._
 
 ## Installation
 
@@ -26,21 +28,8 @@ Or install it yourself as:
 
 ## Usage
 
-You can use the `lowdown` bin that comes with this gem or in code at its simplest:
-
-```ruby
-notification = Lowdown::Notification.new(:token => "device-token", :payload => { :alert => "Hello World!" })
-
-Lowdown::Client.production(true, File.read("path/to/certificate.pem")).connect do |client|
-  client.send_notification(notification) do |response|
-    if response.success?
-      puts "Notification sent"
-    else
-      puts "Notification failed: #{response}"
-    end
-  end
-end
-```
+You can use the `lowdown` bin that comes with this gem or for code usage see
+[the documentation](http://www.rubydoc.info/gems/lowdown).
 
 ## Contributing
 

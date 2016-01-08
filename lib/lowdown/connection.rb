@@ -6,9 +6,13 @@ require "openssl"
 require "uri"
 require "socket"
 
-# Monkey-patch http-2 gem until this PR is merged: https://github.com/igrigorik/http-2/pull/44
 if HTTP2::VERSION == "0.8.0"
+  # @!visibility private
+  #
+  # Monkey-patch http-2 gem until this PR is merged: https://github.com/igrigorik/http-2/pull/44
   class HTTP2::Client
+    # This monkey-patch ensures that we send the HTTP/2 connection preface before anything else.
+    #
     def connection_management(frame)
       if @state == :waiting_connection_preface
         send_connection_preface
@@ -21,13 +25,35 @@ if HTTP2::VERSION == "0.8.0"
 end
 
 module Lowdown
+  # The class responsible for managing the connection to the Apple Push Notification service.
+  #
+  # It manages both the SSL connection and processing of the HTTP/2 data sent back and forth over that connection.
+  #
   class Connection
-    attr_reader :uri, :ssl_context
-
+    # @param  [URI, String] uri
+    #         the details to connect to the APN service.
+    #
+    # @param  [OpenSSL::SSL::SSLContext] ssl_context
+    #         a SSL context, configured with the certificate/key pair, which is used to connect to the APN service.
+    #
     def initialize(uri, ssl_context)
       @uri, @ssl_context = URI(uri), ssl_context
     end
 
+    # @return [URI]
+    #         the details to connect to the APN service.
+    #
+    attr_reader :uri
+
+    # @return [OpenSSL::SSL::SSLContext]
+    #         a SSL context, configured with the certificate/key pair, which is used to connect to the APN service.
+    #
+    attr_reader :ssl_context
+
+    # Creates a new SSL connection to the service, a HTTP/2 client, and starts off a worker thread.
+    #
+    # @return [void]
+    #
     def open
       @socket = TCPSocket.new(@uri.host, @uri.port)
 
@@ -49,12 +75,19 @@ module Lowdown
       @worker_thread = start_worker_thread!
     end
 
+    # @return [Boolean]
+    #         whether or not the Connection is open.
+    #
+    # @todo   Possibly add a HTTP/2 `PING` in the future.
+    #
     def open?
       !@ssl.nil? && !@ssl.closed?
     end
 
-    # Terminates the worker thread and closes the socket. Finally it peforms one more check for pending jobs dispatched
-    # onto the main thread.
+    # Flushes the connection, terminates the worker thread, and closes the socket. Finally it peforms one more check for
+    # pending jobs dispatched onto the main thread.
+    #
+    # @return [void]
     #
     def close
       flush
@@ -70,6 +103,10 @@ module Lowdown
       @socket = @ssl = @http = @main_queue = @work_queue = @requests = @exceptions = @worker_thread = nil
     end
 
+    # Halts the calling thread until all dispatched requests have been performed.
+    #
+    # @return [void]
+    #
     def flush
       until @work_queue.empty? && @requests.zero?
         @main_queue.drain!
@@ -77,6 +114,25 @@ module Lowdown
       end
     end
 
+    # Sends the provided data as a `POST` request to the service.
+    #
+    # @param  [String] path
+    #         the request path, which should be `/3/device/<device-token>`.
+    #
+    # @param  [Hash] headers
+    #         the additional headers for the request. By default it sends `:method`, `:path`, and `content-length`.
+    #
+    # @param  [String] body
+    #         the (JSON) encoded payload data to send to the service.
+    #
+    # @yield  [response]
+    #         Called when the request is finished and a response is available.
+    #
+    # @yieldparam [Response] response
+    #         The Response that holds the status data that came back from the service.
+    #
+    # @return [void]
+    #
     def post(path, headers, body, &callback)
       request('POST', path, headers, body, &callback)
     end
