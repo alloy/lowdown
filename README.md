@@ -8,6 +8,11 @@ Lowdown is a Ruby client for the HTTP/2 version of the Apple Push Notification S
 
 Multiple notifications are multiplexed for efficiency.
 
+If you need to cotinuously send notifications, it’s a good idea to keep an open connection. Managing that, in for
+instance a daemon, is beyond the scope of this library. We might release an extra daemon/server tool in the future that
+provides this functionality, but for now you should simply use the Client provided in this library without the block
+form (which automatically closes the connection) and build your own daemon/server setup, as required.
+
 NOTE: _It is not yet battle-tested. This will all follow over the next few weeks._
 
 ## Installation
