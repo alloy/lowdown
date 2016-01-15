@@ -13,6 +13,8 @@ instance a daemon, is beyond the scope of this library. We might release an extr
 provides this functionality, but for now you should simply use the Client provided in this library without the block
 form (which automatically closes the connection) and build your own daemon/server setup, as required.
 
+Also checkout [this library](https://github.com/alloy/time_zone_scheduler) for scheduling across time zones.
+
 NOTE: _It is not yet battle-tested. This will all follow over the next few weeks._
 
 ## Installation
