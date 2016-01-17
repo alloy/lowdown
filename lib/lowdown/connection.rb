@@ -87,8 +87,7 @@ module Lowdown
     def close
       return unless @worker
       flush
-      @worker[:should_exit] = true
-      @worker.join
+      @worker.stop
       @worker = @requests = nil
     end
 
@@ -181,6 +180,8 @@ module Lowdown
       end
     end
 
+    # @!visibility private
+    #
     # Creates a new worker thread which maintains all its own state:
     # * SSL connection
     # * HTTP2 client
@@ -202,7 +203,7 @@ module Lowdown
         # Store the caller thread to be able to resume it once connected and to send exceptions to.
         @caller_thread = Thread.current
         # Start the worker thread.
-        super(&method(:start))
+        super(&method(:main))
         # Put caller thread into sleep until connected.
         Thread.stop
       end
@@ -221,23 +222,35 @@ module Lowdown
         @queue << job
       end
 
+      # @return [Boolean]
+      #         whether or not the work queue is empty.
+      #
       def empty?
         @queue.empty?
       end
 
+      # Tells the runloop to stop and halts the caller until finished.
+      #
+      # @return [void]
+      #
+      def stop
+        self[:should_exit] = true
+        join
+      end
+
       private
 
-      def start
+      def main
         connect
         runloop
       rescue Exception => exception
         # Send any unexpected exceptions back to the thread that started the loop.
         @caller_thread.raise(exception)
       ensure
-        stop
+        cleanup
       end
 
-      def stop
+      def cleanup
         @callback_thread.kill
         @ssl.close
       end
