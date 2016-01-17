@@ -19,7 +19,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   # This is currently set to >= 2.0.0 in the http-2 gemspec, which is incorrect, as it uses required keyword arguments.
-  spec.required_ruby_version = '>= 2.1.0'
+  spec.required_ruby_version = '>= 2.1.1'
 
   spec.add_runtime_dependency "http-2", ">= 0.8"
 
