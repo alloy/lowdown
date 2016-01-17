@@ -76,7 +76,7 @@ module Lowdown
     def open
       raise "Connection already open." if @worker
       @requests = Threading::Counter.new
-      @worker = Worker.new(Thread.current, @uri, @ssl_context)
+      @worker = Worker.new(@uri, @ssl_context)
     end
 
     # Flushes the connection, terminates the worker thread, and closes the socket. Finally it peforms one more check for
@@ -104,7 +104,7 @@ module Lowdown
       return false unless @worker
       Timeout.timeout(timeout) do
         caller_thread = Thread.current
-        @worker.queue << lambda do |http, _|
+        @worker.enqueue do |http|
           http.ping('12345678') { caller_thread.run }
         end
         Thread.stop
@@ -121,7 +121,7 @@ module Lowdown
     #
     def flush
       return unless @worker
-      sleep 0.1 until !@worker.alive? || @worker.queue.empty? && @requests.zero?
+      sleep 0.1 until !@worker.alive? || @worker.empty? && @requests.zero?
     end
 
     # Sends the provided data as a `POST` request to the service.
@@ -153,7 +153,7 @@ module Lowdown
 
     def request(method, path, custom_headers, body, &callback)
       @requests.increment!
-      @worker.queue << lambda do |http, callbacks|
+      @worker.enqueue do |http, callbacks|
         headers = { ":method" => method.to_s, ":path" => path.to_s, "content-length" => body.bytesize.to_s }
         custom_headers.each { |k, v| headers[k] = v.to_s }
 
@@ -187,26 +187,48 @@ module Lowdown
     # * Another thread from where request callbacks are ran
     #
     class Worker < Thread
-      attr_reader :queue
+      def initialize(uri, ssl_context)
+        @uri, @ssl_context = uri, ssl_context
 
-      def initialize(caller_thread, uri, ssl_context)
-        @caller_thread, @uri, @ssl_context = caller_thread, uri, ssl_context
-        @queue = Queue.new
+        # Because a max size of 0 is not allowed, create with an initial max size of 1 and add a dummy job. This is so
+        # that any attempt to add a new job to the queue is going to halt the calling thread *until* we change the max.
+        @queue = SizedQueue.new(1)
+        @queue << lambda { |*_| }
 
         # Setup the consumer that performs the callbacks passed to Connection#request
         @callback_queue = Queue.new
         @callback_thread = Thread.new(@callback_queue) { |q| loop { q.pop.call } }
 
+        # Store the caller thread to be able to resume it once connected and to send exceptions to.
+        @caller_thread = Thread.current
+        # Start the worker thread.
         super(&method(:start))
         # Put caller thread into sleep until connected.
         Thread.stop
+      end
+
+      # @yield  [http, callbacks_queue]
+      #
+      # @yieldparam [HTTP2::Client] http
+      #         the HTTP2 client instance.
+      #
+      # @yieldparam [Queue] callbacks_queue
+      #         the queue on which request callbacks should be performed.
+      #
+      # @return [void]
+      #
+      def enqueue(&job)
+        @queue << job
+      end
+
+      def empty?
+        @queue.empty?
       end
 
       private
 
       def start
         connect
-        @caller_thread.run
         runloop
       rescue Exception => exception
         # Send any unexpected exceptions back to the thread that started the loop.
@@ -235,18 +257,34 @@ module Lowdown
         end
       end
 
+      def change_to_connected_state
+        @queue.max = @http.remote_settings[:settings_max_concurrent_streams]
+        @connected = true
+        @caller_thread.run
+      end
+
+      # @note Only made into a method so it can be overriden from the tests, because our test setup doesn’t behave the
+      #       same as the real APNS service.
+      #
+      def http_connected?
+        @http.state == :connected
+      end
+
       # Start the main IO and HTTP processing loop.
       def runloop
         until self[:should_exit] || @ssl.closed?
-          if @http.active_stream_count < @http.remote_settings[:settings_max_concurrent_streams]
+          # Once connected, add requests while the max stream count has not yet been reached.
+          if !@connected
+            change_to_connected_state if http_connected?
+          elsif @http.active_stream_count < @queue.max
             begin
               # Run dispatched jobs that add new requests.
               @queue.pop(true).call(@http, @callback_queue)
             rescue ThreadError
             end
           end
+          # Try to read data from the SSL socket without blocking and process it.
           begin
-            # Try to read data from the SSL socket without blocking and process it.
             @http << @ssl.read_nonblock(1024)
           rescue IO::WaitReadable
           end

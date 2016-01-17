@@ -1,5 +1,22 @@
 require "test_helper"
 
+class Lowdown::Connection::Worker
+  # So, our test server does not behave exactly the same as the APNS service, which would normally be:
+  # 1. The preface dance is done
+  # 2. The server sends settings
+  # 3. The client changes state to :connected.
+  #
+  # In our test setup, step 1 and 2 seem to not work as expected and thus the client doesn’t change to the :connected
+  # state. Since it’s not that big of a deal, as it works in practice, this override ensures that our implementation
+  # does not halt indefinitely in our tests.
+  #
+  # TODO: Figure out what’s going wrong so this isn’t needed.
+  #
+  def http_connected?
+    true
+  end
+end
+
 describe Lowdown::Connection do
   server = nil
 
