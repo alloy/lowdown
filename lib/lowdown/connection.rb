@@ -2,9 +2,11 @@ require "lowdown/threading"
 require "lowdown/response"
 
 require "http/2"
+
 require "openssl"
-require "uri"
 require "socket"
+require "timeout"
+require "uri"
 
 if HTTP2::VERSION == "0.8.0"
   # @!visibility private
@@ -72,33 +74,10 @@ module Lowdown
     # @return [void]
     #
     def open
-      @socket = TCPSocket.new(@uri.host, @uri.port)
-
-      @ssl = OpenSSL::SSL::SSLSocket.new(@socket, @ssl_context)
-      @ssl.sync_close = true
-      @ssl.hostname = @uri.hostname
-      @ssl.connect
-
-      @http = HTTP2::Client.new
-      @http.on(:frame) do |bytes|
-        @ssl.print(bytes)
-        @ssl.flush
-      end
-
-      @main_queue    = Threading::DispatchQueue.new
-      @work_queue    = Threading::DispatchQueue.new
+      raise "Connection already open." if @worker_thread
+      @work_queue    = Queue.new
       @requests      = Threading::Counter.new
-      @exceptions    = Queue.new
       @worker_thread = start_worker_thread!
-    end
-
-    # @return [Boolean]
-    #         whether or not the Connection is open.
-    #
-    # @todo   Possibly add a HTTP/2 `PING` in the future.
-    #
-    def open?
-      !@ssl.nil? && !@ssl.closed?
     end
 
     # Flushes the connection, terminates the worker thread, and closes the socket. Finally it peforms one more check for
@@ -107,17 +86,34 @@ module Lowdown
     # @return [void]
     #
     def close
+      return unless @worker_thread
       flush
-
       @worker_thread[:should_exit] = true
       @worker_thread.join
+      @work_queue = @requests = @worker_thread = nil
+    end
 
-      @ssl.close
-
-      sleep 0.1
-      @main_queue.drain!
-
-      @socket = @ssl = @http = @main_queue = @work_queue = @requests = @exceptions = @worker_thread = nil
+    # This performs a HTTP/2 PING to determine if the connection is actually alive.
+    #
+    # @param  [Numeric] timeout
+    #         the maximum amount of time to wait for the service to reply to the PING.
+    #
+    # @return [Boolean]
+    #         whether or not the Connection is open.
+    #
+    def open?(timeout = 5)
+      return false unless @worker_thread
+      Timeout.timeout(timeout) do
+        caller_thread = Thread.current
+        @work_queue << lambda do |http, _|
+          http.ping('12345678') { caller_thread.run }
+        end
+        Thread.stop
+      end
+      # If the thread was woken-up before the timeout was reached, that means we got a PONG.
+      true
+    rescue Timeout::Error
+      false
     end
 
     # Halts the calling thread until all dispatched requests have been performed.
@@ -125,13 +121,13 @@ module Lowdown
     # @return [void]
     #
     def flush
-      until @work_queue.empty? && @requests.zero?
-        @main_queue.drain!
-        sleep 0.1
-      end
+      return unless @worker_thread
+      sleep 0.1 until !@worker_thread.alive? || @work_queue.empty? && @requests.zero?
     end
 
     # Sends the provided data as a `POST` request to the service.
+    #
+    # @note The callback is performed on a different thread, dedicated to perfoming these callbacks.
     #
     # @param  [String] path
     #         the request path, which should be `/3/device/<device-token>`.
@@ -158,11 +154,11 @@ module Lowdown
 
     def request(method, path, custom_headers, body, &callback)
       @requests.increment!
-      @work_queue.dispatch do
+      @work_queue << lambda do |http, callback_queue|
         headers = { ":method" => method.to_s, ":path" => path.to_s, "content-length" => body.bytesize.to_s }
         custom_headers.each { |k, v| headers[k] = v.to_s }
 
-        stream = @http.new_stream
+        stream = http.new_stream
         response = Response.new
 
         stream.on(:headers) do |response_headers|
@@ -175,7 +171,7 @@ module Lowdown
         end
 
         stream.on(:close) do
-          @main_queue.dispatch do
+          callback_queue << lambda do
             callback.call(response)
             @requests.decrement!
           end
@@ -184,54 +180,72 @@ module Lowdown
         stream.headers(headers, end_stream: false)
         stream.data(body, end_stream: true)
       end
-
-      # The caller might be posting many notifications, so use this time to also dispatch work onto the main thread.
-      @main_queue.drain!
     end
 
+    # Creates a new worker thread which maintains all its own state:
+    # * SSL connection
+    # * HTTP2 client
+    # * Another thread from where request callbacks are ran
+    #
+    # @return [Thread]
+    #         the worker thread.
+    #
     def start_worker_thread!
-      Thread.new do
-        until Thread.current[:should_exit] || @ssl.closed?
-          # Run any dispatched jobs that add new requests.
-          #
-          # Re-raising a worker exception aids the development process. In production there’s no reason why this should
-          # raise at all.
-          if exception = @work_queue.drain!
-            exception_occurred_in_worker(exception)
+      # Capture the current thread to send exceptions back to.
+      Thread.new(Thread.current, @uri, @ssl_context, @work_queue) do |caller_thread, uri, ssl_context, work_queue|
+        begin
+
+          # Open the connection.
+          ssl = OpenSSL::SSL::SSLSocket.new(TCPSocket.new(uri.host, uri.port), ssl_context)
+          ssl.sync_close = true
+          ssl.hostname = uri.hostname
+          ssl.connect
+
+          # Wake-up the caller thread and let the Connection#start_worker_thread! method exit.
+          caller_thread.run
+
+          http = HTTP2::Client.new
+          http.on(:frame) do |bytes|
+            # This is going to be performed on the worker thread and thus does *not* write to @ssl from another thread than
+            # the thread it’s being read from.
+            ssl.print(bytes)
+            ssl.flush
           end
 
-          # Try to read data from the SSL socket without blocking. If it would block, catch the exception and restart
-          # the loop.
-          begin
-            data = @ssl.read_nonblock(1024)
-          rescue IO::WaitReadable
-            data = nil
-          rescue EOFError => exception
-            exception_occurred_in_worker(exception)
-            Thread.current[:should_exit] = true
-            data = nil
-          end
+          # Setup the consumer that performs the callbacks passed to Connection#request
+          callback_queue = Queue.new
+          callback_thread = Thread.new(callback_queue) { |q| loop { q.pop.call } }
 
-          # Process incoming HTTP data. If any processing exception occurs, fail the whole process.
-          if data
+          # Start the main IO and HTTP processing loop.
+          until Thread.current[:should_exit] || ssl.closed?
+            if http.active_stream_count < http.remote_settings[:settings_max_concurrent_streams]
+              begin
+                # Run dispatched jobs that add new requests.
+                work_queue.pop(true).call(http, callback_queue)
+              rescue ThreadError
+              end
+            end
             begin
-              @http << data
-            rescue Exception => exception
-              @ssl.close
-              exception_occurred_in_worker(exception)
+              # Try to read data from the SSL socket without blocking and process it.
+              http << ssl.read_nonblock(1024)
+            rescue IO::WaitReadable
             end
           end
-        end
-      end
-    end
 
-    # Raise the exception on the main thread and reset the number of in-flight requests so that a potential blocked
-    # caller of `Connection#flush` will continue.
-    #
-    def exception_occurred_in_worker(exception)
-      @exceptions << exception
-      @main_queue.dispatch { raise @exceptions.pop }
-      @requests.value = @http.active_stream_count
+        rescue Exception => exception
+          # Send any unexpected exceptions back to the thread that started the loop.
+          caller_thread.raise(exception)
+        ensure
+          # Always terminate the callbacks consumer
+          # * either because an exception occurred during the above loop
+          # * or because the thread was terminated
+          callback_thread.kill
+          ssl.close
+        end
+      end.tap do
+        # Put caller thread into sleep until the worker thread has connected.
+        Thread.stop
+      end
     end
   end
 end

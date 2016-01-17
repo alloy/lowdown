@@ -155,6 +155,8 @@ module Lowdown
     #
     # @see Connection#post
     #
+    # @note (see Connection#post)
+    #
     # @param  [Notification] notification
     #         the notification object whose data to send to the service.
     #
