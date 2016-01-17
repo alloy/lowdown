@@ -3,7 +3,10 @@ require "lowdown/version"
 
 # Lowdown is a Ruby client for the HTTP/2 version of the Apple Push Notification Service.
 #
-# Multiple notifications are multiplexed for efficiency.
+# Multiple notifications are multiplexed and responses are yielded onto a different thread for efficiency.
+#
+# Note that it is thus _your_ responsibility to take the threading issue into account. E.g. if you are planning to
+# update a DB model with the status of a notification delivery, be sure to respect the treading rules of your DB client.
 #
 # The main classes you will interact with are {Lowdown::Client} and {Lowdown::Notification}. For testing purposes there
 # are some helpers available in {Lowdown::Mock}.
