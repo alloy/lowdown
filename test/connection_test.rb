@@ -117,7 +117,12 @@ module Lowdown
         rescue EOFError
         end
         @worker.ssl.closed?.must_equal true
-        @worker.callback_thread.alive?.must_equal false
+        alive = true
+        Timeout.timeout(5) do
+          sleep 0.1 while @worker.callback_thread.alive?
+          alive = false
+        end
+        alive.must_equal false
       end
     end
   end
