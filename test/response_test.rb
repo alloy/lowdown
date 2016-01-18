@@ -2,6 +2,8 @@ require "test_helper"
 
 module Lowdown
   describe Response do
+    parallelize_me!
+
     it "returns the HTTP status code" do
       Response.new(":status" => "200").status.must_equal 200
     end
@@ -22,6 +24,8 @@ module Lowdown
     end
 
     describe "concerning an invalid token" do
+    parallelize_me!
+
       before do
         @timestamp = Time.now
         @response = Response.new({ ":status" => "410" }, { "timestamp" => @timestamp.to_i.to_s }.to_json)
@@ -38,6 +42,8 @@ module Lowdown
     end
 
     describe "#unformatted_id" do
+      parallelize_me!
+
       it "unformats the ID, but always as string" do
         [42, "5682d0d35a9416d877000000"].each do |id|
           formatted_id = Notification.new(:id => id).formatted_id

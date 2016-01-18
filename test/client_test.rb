@@ -4,6 +4,8 @@ require "lowdown/mock"
 module Lowdown
   describe Client do
     describe "concerning initialization" do
+      parallelize_me!
+
       before do
         @certificate = Mock.certificate("com.example.MockAPNS")
         @uri = Client::DEVELOPMENT_URI
@@ -46,6 +48,8 @@ module Lowdown
     end
 
     describe "when initialized" do
+      parallelize_me!
+
       before do
         @connection = Mock::Connection.new
         @client = Client.new(@connection, "com.example.MockAPNS")
@@ -59,6 +63,8 @@ module Lowdown
       end
 
       describe "when sending a notification" do
+        parallelize_me!
+
         before do
           @notification = Lowdown::Notification.new(
             :payload => { :alert => "Push it real good.", :url => "http://example/custom-attribute" },
@@ -71,6 +77,8 @@ module Lowdown
         end
 
         describe "in general" do
+          parallelize_me!
+
           before do
             @client.send_notification(@notification) {}
             @request = @connection.requests.last
@@ -102,6 +110,8 @@ module Lowdown
         end
 
         describe "when omitting data" do
+          parallelize_me!
+
           before do
             @notification.expiration = nil
             @notification.id = nil

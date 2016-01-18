@@ -3,6 +3,8 @@ require "lowdown/mock"
 
 module Lowdown
   describe Certificate do
+    parallelize_me!
+
     before do
       @cert, @key = Mock.ssl_certificate_and_key("com.example.MockAPNS")
       @certificate = Certificate.new(@cert, @key)
@@ -34,6 +36,8 @@ module Lowdown
     end
 
     describe "with a non-universal certificate" do
+      parallelize_me!
+
       before do
         @cert.extensions = []
       end
@@ -48,6 +52,8 @@ module Lowdown
     end
 
     describe "with a universal certificate" do
+      parallelize_me!
+
       before do
         value = %w{
           0d

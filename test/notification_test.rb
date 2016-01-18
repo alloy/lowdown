@@ -2,6 +2,8 @@ require "test_helper"
 
 module Lowdown
   describe Notification do
+    parallelize_me!
+
     it "formats the ID to the canonical 8-4-4-4-12 format" do
       Notification.new(:id => nil).formatted_id.must_equal nil
       Notification.new(:id => 42).formatted_id.must_equal "00000000-0000-0000-0000-000000000042"
@@ -9,6 +11,8 @@ module Lowdown
     end
 
     describe "concerning payload" do
+      parallelize_me!
+
       before do
         @formatted_payload = {
           "aps" => {

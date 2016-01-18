@@ -3,6 +3,8 @@ require "timeout"
 
 module Lowdown::Threading
   describe Consumer do
+    parallelize_me!
+
     before do
       @consumer = Consumer.new
     end
@@ -76,6 +78,8 @@ module Lowdown::Threading
   end
 
   describe Counter do
+    parallelize_me!
+
     before do
       @counter = Counter.new
     end
