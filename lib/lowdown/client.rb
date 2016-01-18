@@ -160,8 +160,14 @@ module Lowdown
     # @param  [Notification] notification
     #         the notification object whose data to send to the service.
     #
-    # @yield  (see Connection#post)
-    # @yieldparam (see Connection#post)
+    # @yield  [response, notification]
+    #         called when the request is finished and a response is available.
+    #
+    # @yieldparam [Response] response
+    #         the Response that holds the status data that came back from the service.
+    #
+    # @yieldparam [Notification] notification
+    #         the originally passed in notification object.
     #
     # @raise  [ArgumentError]
     #         raised if the Notification is not {Notification#valid?}.
@@ -180,7 +186,10 @@ module Lowdown
 
       body = notification.formatted_payload.to_json
 
-      @connection.post("/3/device/#{notification.token}", headers, body, &callback)
+      # No need to keep a strong reference to the notification object, unless the user really wants it.
+      actual_callback = callback.arity < 2 ? callback : lambda { |response| callback.call(response, notification) }
+
+      @connection.post("/3/device/#{notification.token}", headers, body, &actual_callback)
     end
   end
 end

@@ -137,10 +137,10 @@ module Lowdown
     #         the (JSON) encoded payload data to send to the service.
     #
     # @yield  [response]
-    #         Called when the request is finished and a response is available.
+    #         called when the request is finished and a response is available.
     #
     # @yieldparam [Response] response
-    #         The Response that holds the status data that came back from the service.
+    #         the Response that holds the status data that came back from the service.
     #
     # @return [void]
     #

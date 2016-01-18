@@ -76,6 +76,18 @@ module Lowdown
           )
         end
 
+        it "yields the notification and response on completion" do
+          yielded_response = yielded_notification = nil
+          @client.connect do
+            @client.send_notification(@notification) do |response, notification|
+              yielded_response = response
+              yielded_notification = notification
+            end
+          end
+          yielded_notification.must_equal @notification
+          yielded_response.unformatted_id.must_equal @notification.id.to_s
+        end
+
         describe "in general" do
           parallelize_me!
 
