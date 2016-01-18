@@ -114,6 +114,20 @@ module Lowdown
           sleep 0.1 until @worker.ssl.closed?
         end
       end
+
+      it "raises exceptions that occur on the callbacks queue and cleans up" do
+        lambda do
+          Timeout.timeout(1) do
+            @worker.send(:callbacks).enqueue { raise ArgumentError }
+            Thread.stop
+          end
+        end.must_raise ArgumentError
+        Timeout.timeout(1) do
+          # should exit without reaching timeout
+          sleep 0.1 while @worker.alive?
+          sleep 0.1 until @worker.ssl.closed?
+        end
+      end
     end
   end
 end

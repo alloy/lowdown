@@ -191,8 +191,6 @@ module Lowdown
       def initialize(uri, ssl_context)
         @uri, @ssl_context = uri, ssl_context
 
-        @callbacks = Threading::Consumer.new
-
         # Start the worker thread.
         #
         # Because a max size of 0 is not allowed, create with an initial max size of 1 and add a dummy job. This is so
@@ -223,6 +221,9 @@ module Lowdown
 
       def pre_runloop
         super
+
+        # Setup the request callbacks consumer here so its parent thread will be this worker thread.
+        @callbacks = Threading::Consumer.new
 
         @ssl = OpenSSL::SSL::SSLSocket.new(TCPSocket.new(@uri.host, @uri.port), @ssl_context)
         @ssl.sync_close = true
