@@ -169,7 +169,7 @@ module Lowdown
         end
 
         stream.on(:close) do
-          callbacks << lambda do
+          callbacks.enqueue do
             callback.call(response)
             @requests.decrement!
           end
@@ -187,46 +187,19 @@ module Lowdown
     # * HTTP2 client
     # * Another thread from where request callbacks are ran
     #
-    class Worker < Thread
+    class Worker < Threading::Consumer
       def initialize(uri, ssl_context)
         @uri, @ssl_context = uri, ssl_context
 
+        @callbacks = Threading::Consumer.new
+
+        # Start the worker thread.
+        #
         # Because a max size of 0 is not allowed, create with an initial max size of 1 and add a dummy job. This is so
         # that any attempt to add a new job to the queue is going to halt the calling thread *until* we change the max.
-        @queue = SizedQueue.new(1)
-        @queue << lambda { |*_| }
-
-        # Setup the consumer that performs the callbacks passed to Connection#request
-        @callback_queue = Queue.new
-        @callback_thread = Thread.new(@callback_queue) { |q| loop { q.pop.call } }
-
-        # Store the caller thread to be able to resume it once connected and to send exceptions to.
-        @caller_thread = Thread.current
-        # Start the worker thread.
-        super(&method(:main))
+        super(queue: Thread::SizedQueue.new(1))
         # Put caller thread into sleep until connected.
         Thread.stop
-      end
-
-      # @yield  [http, callbacks_queue]
-      #
-      # @yieldparam [HTTP2::Client] http
-      #         the HTTP2 client instance.
-      #
-      # @yieldparam [Queue] callbacks_queue
-      #         the queue on which request callbacks should be performed.
-      #
-      # @return [void]
-      #
-      def enqueue(&job)
-        @queue << job
-      end
-
-      # @return [Boolean]
-      #         whether or not the work queue is empty.
-      #
-      def empty?
-        @queue.empty?
       end
 
       # Tells the runloop to stop and halts the caller until finished.
@@ -234,28 +207,23 @@ module Lowdown
       # @return [void]
       #
       def stop
-        self[:should_exit] = true
-        join
+        thread[:should_exit] = true
+        thread.join
       end
 
       private
 
-      def main
-        connect
-        runloop
-      rescue Exception => exception
-        # Send any unexpected exceptions back to the thread that started the loop.
-        @caller_thread.raise(exception)
-      ensure
-        cleanup
-      end
+      attr_reader :callbacks
 
-      def cleanup
-        @callback_thread.kill
+      def post_runloop
+        @callbacks.kill
         @ssl.close
+        super
       end
 
-      def connect
+      def pre_runloop
+        super
+
         @ssl = OpenSSL::SSL::SSLSocket.new(TCPSocket.new(@uri.host, @uri.port), @ssl_context)
         @ssl.sync_close = true
         @ssl.hostname = @uri.hostname
@@ -271,9 +239,9 @@ module Lowdown
       end
 
       def change_to_connected_state
-        @queue.max = @http.remote_settings[:settings_max_concurrent_streams]
+        queue.max = @http.remote_settings[:settings_max_concurrent_streams]
         @connected = true
-        @caller_thread.run
+        parent_thread.run
       end
 
       # @note Only made into a method so it can be overriden from the tests, because our test setup doesn’t behave the
@@ -285,16 +253,13 @@ module Lowdown
 
       # Start the main IO and HTTP processing loop.
       def runloop
-        until self[:should_exit] || @ssl.closed?
+        until thread[:should_exit] || @ssl.closed?
           # Once connected, add requests while the max stream count has not yet been reached.
           if !@connected
             change_to_connected_state if http_connected?
-          elsif @http.active_stream_count < @queue.max
-            begin
-              # Run dispatched jobs that add new requests.
-              @queue.pop(true).call(@http, @callback_queue)
-            rescue ThreadError
-            end
+          elsif @http.active_stream_count < queue.max
+            # Run dispatched jobs that add new requests.
+            perform_job(true, @http, @callbacks)
           end
           # Try to read data from the SSL socket without blocking and process it.
           begin

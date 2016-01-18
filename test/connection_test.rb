@@ -91,38 +91,28 @@ module Lowdown
       end
     end
 
-    describe Connection::Worker do
+    describe 'Worker' do
       before do
         @worker = Connection::Worker.new(@connection.uri, @connection.ssl_context)
       end
 
       after do
-        @worker[:should_exit] = true
-        @worker.join
+        @worker.stop
       end
 
-      it "raises exceptions that occur on the worker thread onto the caller (current) thread" do
-        Timeout.timeout(5) do
-          lambda do
-            @worker.enqueue { raise EOFError, "eof" }
-            Thread.stop
-          end.must_raise EOFError
-        end
-      end
-
-      it "cleans up if an exception occurred" do
+      it "closes the ssl connection if an exception occurred" do
         begin
-          @worker.enqueue { raise EOFError, "eof" }
+          @worker.enqueue do
+            sleep 0.1 # ensure the caller thread first stops
+            raise EOFError, "eof"
+          end
           Thread.stop
         rescue EOFError
         end
-        @worker.ssl.closed?.must_equal true
-        alive = true
-        Timeout.timeout(5) do
-          sleep 0.1 while @worker.callback_thread.alive?
-          alive = false
+        Timeout.timeout(1) do
+          # should exit without reaching timeout
+          sleep 0.1 until @worker.ssl.closed?
         end
-        alive.must_equal false
       end
     end
   end
