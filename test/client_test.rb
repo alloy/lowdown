@@ -80,7 +80,9 @@ module Lowdown
           parallelize_me!
 
           before do
-            @client.send_notification(@notification) {}
+            @client.connect do
+              @client.send_notification(@notification) {}
+            end
             @request = @connection.requests.last
           end
 
@@ -117,7 +119,9 @@ module Lowdown
             @notification.id = nil
             @notification.priority = nil
             @notification.topic = nil
-            @client.send_notification(@notification) {}
+            @client.connect do
+              @client.send_notification(@notification) {}
+            end
             @request = @connection.requests.last
           end
 

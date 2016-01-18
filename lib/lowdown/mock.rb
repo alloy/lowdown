@@ -1,6 +1,7 @@
 require "lowdown/certificate"
 require "lowdown/client"
 require "lowdown/response"
+require "lowdown/threading"
 
 module Lowdown
   # Provides a collection of test helpers.
@@ -122,17 +123,18 @@ module Lowdown
 
       # @!group Real API: Instance Method Summary
 
-      # Yields stubbed {#responses} or if none are available defaults to success responses.
+      # Yields stubbed {#responses} or if none are available defaults to success responses. It does this on a different
+      # thread, just like the real API does.
       #
       # @param (see Lowdown::Connection#post)
       # @yield (see Lowdown::Connection#post)
       # @yieldparam (see Lowdown::Connection#post)
       # @return (see Lowdown::Connection#post)
       #
-      def post(path, headers, body)
+      def post(path, headers, body, &callback)
         response = @responses.shift || Response.new(":status" => "200", "apns-id" => (headers["apns-id"] || generate_id))
         @requests << Request.new(path, headers, body, response)
-        yield response
+        @callbacks.enqueue { callback.call(response) }
       end
 
       # Changes {#open?} to return `true`.
@@ -140,6 +142,7 @@ module Lowdown
       # @return [void]
       #
       def open
+        @callbacks = Threading::Consumer.new
         @open = true
       end
 
@@ -148,6 +151,9 @@ module Lowdown
       # @return [void]
       #
       def close
+        flush
+        @callbacks.kill
+        @callbacks = nil
         @open = false
       end
 
@@ -156,6 +162,12 @@ module Lowdown
       # @return [void]
       #
       def flush
+        caller_thread = Thread.current
+        @callbacks.enqueue do
+          sleep 0.1
+          caller_thread.run
+        end
+        Thread.stop
       end
 
       # @return (see Lowdown::Connection#open?)
