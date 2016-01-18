@@ -109,24 +109,22 @@ module Lowdown
           Thread.stop
         rescue EOFError
         end
-        Timeout.timeout(1) do
-          # should exit without reaching timeout
-          sleep 0.1 until @worker.ssl.closed?
-        end
+        lambda { @worker.ssl.closed? }.must_eventually_pass
       end
 
       it "raises exceptions that occur on the callbacks queue and cleans up" do
         lambda do
           Timeout.timeout(1) do
-            @worker.send(:callbacks).enqueue { raise ArgumentError }
+            @worker.send(:callbacks).enqueue do
+              sleep 0.1 # ensure the caller thread first stops
+              raise ArgumentError
+            end
             Thread.stop
           end
         end.must_raise ArgumentError
-        Timeout.timeout(1) do
-          # should exit without reaching timeout
-          sleep 0.1 while @worker.alive?
-          sleep 0.1 until @worker.ssl.closed?
-        end
+        lambda do
+          !@worker.alive? && @worker.ssl.closed?
+        end.must_eventually_pass
       end
     end
   end

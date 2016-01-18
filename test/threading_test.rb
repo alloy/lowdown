@@ -22,11 +22,7 @@ module Lowdown::Threading
           @consumer.send(:perform_job, false)
         end
       end.must_raise Timeout::Error
-
-      # Won’t raise
-      Timeout.timeout(0.1) do
-        @consumer.send(:perform_job, true)
-      end
+      lambda { @consumer.send(:perform_job, true); true }.must_eventually_pass
     end
 
     it "passes arguments to the job" do
@@ -75,10 +71,7 @@ module Lowdown::Threading
         Thread.stop
       rescue EOFError
       end
-      Timeout.timeout(1) do
-        # should exit without reaching timeout
-        sleep 0.1 while @consumer.alive?
-      end
+      lambda { !@consumer.alive? }.must_eventually_pass
     end
   end
 

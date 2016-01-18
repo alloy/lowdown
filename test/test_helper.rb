@@ -4,6 +4,24 @@ require 'lowdown'
 require 'minitest/spec'
 require 'minitest/autorun'
 
+require 'timeout'
+module MiniTest::Assertions
+  def assert_eventually_passes(timeout, block)
+    timeout ||= 2
+    success = false
+    begin
+      Timeout.timeout(timeout) do
+        sleep 0.1 until block.call
+        success = true
+      end
+    rescue Timeout::Error
+      success = false
+    end
+    assert success, "Block did return `true` before timeout (#{timeout} sec) was reached."
+  end
+end
+Proc.infect_an_assertion :assert_eventually_passes, :must_eventually_pass
+
 class MockAPNS
   class Request < Struct.new(:headers, :body)
     def initialize(*)
