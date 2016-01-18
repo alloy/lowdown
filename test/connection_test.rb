@@ -5,7 +5,7 @@ module Lowdown
     attr_reader :worker
 
     class Worker
-      attr_reader :ssl, :callback_thread
+      attr_reader :ssl, :callbacks
 
       # So, our test server does not behave exactly the same as the APNS service, which would normally be:
       # 1. The preface dance is done

@@ -21,10 +21,10 @@ module Lowdown::Threading
     it "halts the thread when performing a job with an empty queue" do
       lambda do
         Timeout.timeout(0.1) do
-          @consumer.send(:perform_job, false)
+          @consumer.send(:perform_job, non_block: false)
         end
       end.must_raise Timeout::Error
-      lambda { @consumer.send(:perform_job, true); true }.must_eventually_pass
+      lambda { @consumer.send(:perform_job, non_block: true); true }.must_eventually_pass
     end
 
     it "passes arguments to the job" do
@@ -34,7 +34,7 @@ module Lowdown::Threading
 
       yielded = nil
       @consumer.enqueue { |x| yielded = x }
-      @consumer.send(:perform_job, false, :ok)
+      @consumer.send(:perform_job, non_block: false, arguments: [:ok])
       yielded.must_equal :ok
     end
 

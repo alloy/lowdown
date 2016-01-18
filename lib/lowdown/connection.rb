@@ -104,7 +104,7 @@ module Lowdown
       Timeout.timeout(timeout) do
         caller_thread = Thread.current
         @worker.enqueue do |http|
-          http.ping('12345678') { caller_thread.run }
+          http.ping('whatever') { caller_thread.run }
         end
         Thread.stop
       end
@@ -120,7 +120,7 @@ module Lowdown
     #
     def flush
       return unless @worker
-      sleep 0.1 until !@worker.alive? || @worker.empty? && @requests.zero?
+      sleep 0.1 until !@worker.working? && @requests.zero?
     end
 
     # Sends the provided data as a `POST` request to the service.
@@ -209,9 +209,14 @@ module Lowdown
         thread.join
       end
 
-      private
+      # @return [Boolean]
+      #         whether or not the worker is still alive and kicking.
+      #
+      def working?
+        alive? && !empty? && !@callbacks.empty?
+      end
 
-      attr_reader :callbacks
+      private
 
       def post_runloop
         @callbacks.kill
@@ -239,6 +244,11 @@ module Lowdown
         end
       end
 
+      # Called when the HTTP client changes its state to `:connected` and lets the parent thread (which was stopped in
+      # `#initialize`) continue.
+      #
+      # @return [void]
+      #
       def change_to_connected_state
         queue.max = @http.remote_settings[:settings_max_concurrent_streams]
         @connected = true
@@ -247,6 +257,9 @@ module Lowdown
 
       # @note Only made into a method so it can be overriden from the tests, because our test setup doesn’t behave the
       #       same as the real APNS service.
+      #
+      # @return [Boolean]
+      #         whether or not the HTTP client’s state is `:connected`.
       #
       def http_connected?
         @http.state == :connected
@@ -260,7 +273,7 @@ module Lowdown
             change_to_connected_state if http_connected?
           elsif @http.active_stream_count < queue.max
             # Run dispatched jobs that add new requests.
-            perform_job(true, @http, @callbacks)
+            perform_job(non_block: true, arguments: [@http, @callbacks])
           end
           # Try to read data from the SSL socket without blocking and process it.
           begin

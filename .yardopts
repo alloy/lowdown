@@ -1,3 +1,4 @@
+--protected
 --no-private
 --markup markdown
 --main README.md
