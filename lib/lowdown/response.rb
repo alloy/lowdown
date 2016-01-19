@@ -85,17 +85,17 @@ module Lowdown
     end
 
     # @return [Boolean]
-    #         whether or not the delivery has failed due to a token no longer being valid.
+    #         whether or not the delivery has failed due to a token no longer being active.
     #
-    def invalid_token?
+    def inactive_token?
       status == 410
     end
 
     # @return [Time, nil]
-    #         in case of an invalid token, the time at which the service last checked it.
+    #         in case of an inactive token, the time at which the service last verified it.
     #
-    def validity_last_checked_at
-      Time.at(body["timestamp"].to_i) if invalid_token?
+    def activity_last_checked_at
+      Time.at(body["timestamp"].to_i) if inactive_token?
     end
 
     # @return [String]
@@ -104,7 +104,7 @@ module Lowdown
     def to_s
       s = "#{status} (#{message})"
       s << ": #{failure_reason}" unless success?
-      s << " last checked at #{validity_last_checked_at}" if invalid_token?
+      s << " last checked at #{activity_last_checked_at}" if inactive_token?
       s
     end
 

@@ -23,7 +23,7 @@ module Lowdown
       response.failure_reason.must_equal "BadDeviceToken"
     end
 
-    describe "concerning an invalid token" do
+    describe "concerning an inactive token" do
     parallelize_me!
 
       before do
@@ -31,13 +31,13 @@ module Lowdown
         @response = Response.new({ ":status" => "410" }, { "timestamp" => @timestamp.to_i.to_s }.to_json)
       end
 
-      it "returns that it concerns an invalid token" do
-        @response.invalid_token?.must_equal true
-        Response.new(":status" => "200").invalid_token?.must_equal false
+      it "returns that it concerns an inactive token" do
+        @response.inactive_token?.must_equal true
+        Response.new(":status" => "200").inactive_token?.must_equal false
       end
 
       it "returns the time at which APNS for the last time verified that the token is invalid" do
-        @response.validity_last_checked_at.to_i.must_equal @timestamp.to_i
+        @response.activity_last_checked_at.to_i.must_equal @timestamp.to_i
       end
     end
 
