@@ -19,12 +19,21 @@ module Lowdown
     end
 
     it "returns the reason for the failed request" do
-      response = Response.new({ ":status" => "400" }, { "reason" => "BadDeviceToken" }.to_json)
-      response.failure_reason.must_equal "BadDeviceToken"
+      response = Response.new({ ":status" => "400" }, { "reason" => "BadCertificate" }.to_json)
+      response.failure_reason.must_equal "BadCertificate"
+    end
+
+    it "returns if there was any issue with the token (other than it missing completely)" do
+      Response.new(":status" => "200").invalid_token?.must_equal false
+      Response.new({ ":status" => "400" }, { "reason" => "BadCertificate" }.to_json).invalid_token?.must_equal false
+
+      [["410", "Unregistered"], ["400", "BadDeviceToken"], ["400", "DeviceTokenNotForTopic"]].each do |status, reason|
+        Response.new({ ":status" => status }, { "reason" => reason }.to_json).invalid_token?.must_equal true
+      end
     end
 
     describe "concerning an inactive token" do
-    parallelize_me!
+      parallelize_me!
 
       before do
         @timestamp = Time.now
