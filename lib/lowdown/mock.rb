@@ -1,7 +1,6 @@
 require "lowdown/certificate"
 require "lowdown/client"
 require "lowdown/response"
-require "lowdown/threading"
 
 module Lowdown
   # Provides a collection of test helpers.
@@ -67,7 +66,7 @@ module Lowdown
     class Connection
       # Represents a recorded request.
       #
-      Request = Struct.new(:path, :headers, :body, :response)
+      Request = Struct.new(:path, :headers, :body, :response, :delegate, :context)
 
       # @!group Mock API: Instance Attribute Summary
 
@@ -91,17 +90,15 @@ module Lowdown
         @requests = []
       end
 
-      # @param  (see Response#unformatted_id)
-      #
       # @return [Array<Notification>]
       #         returns the recorded requests as Notification objects.
       #
-      def requests_as_notifications(unformatted_id_length = nil)
+      def requests_as_notifications
         @requests.map do |request|
           headers = request.headers
           hash = {
             :token => File.basename(request.path),
-            :id => request.response.unformatted_id(unformatted_id_length),
+            :id => request.response.id,
             :payload => JSON.parse(request.body),
             :topic => headers["apns-topic"]
           }
@@ -121,6 +118,12 @@ module Lowdown
       #
       attr_reader :ssl_context
 
+      # @!group Celluloid API
+
+      def async
+        self
+      end
+
       # @!group Real API: Instance Method Summary
 
       # Yields stubbed {#responses} or if none are available defaults to success responses. It does this on a different
@@ -131,10 +134,11 @@ module Lowdown
       # @yieldparam (see Lowdown::Connection#post)
       # @return (see Lowdown::Connection#post)
       #
-      def post(path, headers, body, &callback)
-        response = @responses.shift || Response.new(":status" => "200", "apns-id" => (headers["apns-id"] || generate_id))
-        @requests << Request.new(path, headers, body, response)
-        @callbacks.enqueue { callback.call(response) }
+      def post(path:, headers:, body:, delegate:, context: nil)
+        raise "First open the connection." unless @open
+        response = @responses.shift || Response.new(":status" => "200", "apns-id" => headers["apns-id"])
+        @requests << Request.new(path, headers, body, response, delegate, context)
+        delegate.handle_apns_response(response, context: context)
       end
 
       # Changes {#open?} to return `true`.
@@ -142,7 +146,6 @@ module Lowdown
       # @return [void]
       #
       def open
-        @callbacks = Threading::Consumer.new
         @open = true
       end
 
@@ -151,37 +154,13 @@ module Lowdown
       # @return [void]
       #
       def close
-        flush
-        @callbacks.kill
-        @callbacks = nil
         @open = false
-      end
-
-      # no-op
-      #
-      # @return [void]
-      #
-      def flush
-        caller_thread = Thread.current
-        @callbacks.enqueue do
-          sleep 0.1
-          caller_thread.run
-        end
-        Thread.stop
       end
 
       # @return (see Lowdown::Connection#open?)
       #
       def open?
         !!@open
-      end
-
-      private
-
-      def generate_id
-        @counter ||= 0
-        @counter += 1
-        Notification.new(:id => @counter).formatted_id
       end
     end
   end

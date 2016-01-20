@@ -36,19 +36,6 @@ module Lowdown
       headers["apns-id"]
     end
 
-    # Tries to convert the ID back to the Notification {Notification#id} by removing leading zeroes.
-    #
-    # @param  [Integer] unformatted_id_length
-    #         the expected length of an ID, which ensures that **required** leading zeroes are not removed.
-    #
-    # @return [String]
-    #         the ID that was assigned to the Notification.
-    #
-    def unformatted_id(unformatted_id_length = nil)
-      id = self.id.tr('-', '')
-      unformatted_id_length ? id[32-unformatted_id_length,unformatted_id_length] : id.gsub(/\A0*/, '')
-    end
-
     # @return [Integer]
     #         the HTTP status returned by the service.
     #

@@ -1,12 +1,14 @@
 $LOAD_PATH.unshift File.expand_path('../../lib', __FILE__)
 require 'lowdown'
 
+### Minitest
+
 require 'minitest/spec'
 require 'minitest/autorun'
 
-require 'timeout'
 module MiniTest::Assertions
   def assert_eventually_passes(timeout, block)
+    require 'timeout'
     timeout ||= 2
     success = false
     begin
@@ -21,6 +23,24 @@ module MiniTest::Assertions
   end
 end
 Proc.infect_an_assertion :assert_eventually_passes, :must_eventually_pass
+
+
+
+### Celluloid Logging
+
+#$CELLULOID_DEBUG = true
+#Celluloid.logger.level = Logger::DEBUG
+
+def silence_logger
+  logger, Celluloid.logger = Celluloid.logger, nil
+  yield
+ensure
+  Celluloid.logger = logger
+end
+
+
+
+### Test Server
 
 class MockAPNS
   class Request < Struct.new(:headers, :body)
@@ -71,6 +91,10 @@ class MockAPNS
 
           stream.on(:headers) do |h|
             request.headers = Hash[*h.flatten]
+            if request.headers["test-close-connection"]
+              stream.close
+              sock.close
+            end
           end
 
           stream.on(:data) do |d|

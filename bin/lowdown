@@ -108,13 +108,13 @@ if tokens.empty?
   help! "No device tokens specified."
 end
 
-notifications = tokens.map.with_index do |token, index|
-  Notification.new(:token => token, :id => index+1, :payload => payload, :topic => options[:topic])
+notifications = tokens.map do |token|
+  Notification.new(:token => token, :payload => payload, :topic => options[:topic])
 end
 
-client.connect do
+client.connect do |group|
   notifications.each do |notification|
-    client.send_notification(notification) do |response|
+    group.send_notification(notification) do |response|
       puts "[#{notification.token} ##{notification.id}] #{response}"
     end
   end

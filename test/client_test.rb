@@ -1,6 +1,8 @@
 require "test_helper"
 require "lowdown/mock"
 
+require "weakref"
+
 module Lowdown
   describe Client do
     describe "concerning initialization" do
@@ -41,9 +43,23 @@ module Lowdown
       end
 
       it "uses the app bundle ID as the default topic in case of a Universal Certificate" do
-
         client = Client.client(@uri, @certificate)
         client.default_topic.must_equal "com.example.MockAPNS"
+      end
+
+      it "configures the connection actor to be terminated when the client is garbage collected" do
+        client = WeakRef.new(Client.client(@uri, @certificate))
+        connection = client.connection
+        connection.alive?.must_equal true
+        GC.start
+        connection.alive?.must_equal false
+      end
+
+      it "does not indefinitely retain the client (paranoia test for the connection finalizer)" do
+        client = WeakRef.new(Client.client(@uri, @certificate))
+        (!!client.weakref_alive?).must_equal true
+        GC.start
+        (!!client.weakref_alive?).must_equal false
       end
     end
 
@@ -55,18 +71,24 @@ module Lowdown
         @client = Client.new(@connection, "com.example.MockAPNS")
       end
 
-      it "yields the client and opens and closes the connection" do
-        yielded_open_client = false
-        @client.connect { |c| yielded_open_client = c.connection.open? }
-        yielded_open_client.must_equal true
+      it "opens the connection for the duration of the block and then closes it" do
+        opened_connection = false
+        @client.connect { opened_connection = @client.connection.open? }
+        opened_connection.must_equal true
         @client.connection.open?.must_equal false
+      end
+
+      it "yields a request group" do
+        yielded_group = nil
+        @client.connect { |group| yielded_group = group }
+        yielded_group.class.must_equal Client::RequestGroup
       end
 
       describe "when sending a notification" do
         parallelize_me!
 
         before do
-          @notification = Lowdown::Notification.new(
+          @notification = Notification.new(
             :payload => { :alert => "Push it real good.", :url => "http://example/custom-attribute" },
             :token => "some-device-token",
             :id => 42,
@@ -76,24 +98,24 @@ module Lowdown
           )
         end
 
-        it "yields the notification and response on completion" do
-          yielded_response = yielded_notification = nil
-          @client.connect do
-            @client.send_notification(@notification) do |response, notification|
+        it "yields the response and context on completion" do
+          yielded_response = yielded_context = nil
+          @client.connect do |group|
+            group.send_notification(@notification, context: :ok) do |response, context|
               yielded_response = response
-              yielded_notification = notification
+              yielded_context = context
             end
           end
-          yielded_notification.must_equal @notification
-          yielded_response.unformatted_id.must_equal @notification.id.to_s
+          yielded_response.id.end_with?("42").must_equal true
+          yielded_context.must_equal :ok
         end
 
         describe "in general" do
           parallelize_me!
 
           before do
-            @client.connect do
-              @client.send_notification(@notification) {}
+            @client.connect do |group|
+              group.send_notification(@notification) {}
             end
             @request = @connection.requests.last
           end
@@ -131,8 +153,8 @@ module Lowdown
             @notification.id = nil
             @notification.priority = nil
             @notification.topic = nil
-            @client.connect do
-              @client.send_notification(@notification) {}
+            @client.connect do |group|
+              group.send_notification(@notification) {}
             end
             @request = @connection.requests.last
           end
@@ -145,10 +167,8 @@ module Lowdown
             @request.headers["apns-topic"].must_equal "com.example.MockAPNS"
           end
 
-          %w{ apns-id apns-priority }.each do |key|
-            it "omits the #{key} header" do
-              @request.headers.has_key?(key).must_equal false
-            end
+          it "omits the apns-priority header" do
+            @request.headers.has_key?("apns-priority").must_equal false
           end
         end
       end
