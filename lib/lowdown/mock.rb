@@ -135,32 +135,32 @@ module Lowdown
       # @return (see Lowdown::Connection#post)
       #
       def post(path:, headers:, body:, delegate:, context: nil)
-        raise "First open the connection." unless @open
         response = @responses.shift || Response.new(":status" => "200", "apns-id" => headers["apns-id"])
+        raise "First open the connection." unless @connected
         @requests << Request.new(path, headers, body, response, delegate, context)
         delegate.handle_apns_response(response, context: context)
       end
 
-      # Changes {#open?} to return `true`.
+      # Changes {#connected?} to return `true`.
       #
       # @return [void]
       #
-      def open
-        @open = true
+      def connect
+        @connected = true
       end
 
-      # Changes {#open?} to return `false`.
+      # Changes {#connected?} to return `false`.
       #
       # @return [void]
       #
-      def close
-        @open = false
+      def disconnect
+        @connected = false
       end
 
-      # @return (see Lowdown::Connection#open?)
+      # @return (see Lowdown::Connection#connected?)
       #
-      def open?
-        !!@open
+      def connected?
+        !!@connected
       end
     end
   end

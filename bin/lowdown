@@ -89,7 +89,7 @@ else
 end
 
 begin
-  client = Client.production(production, certificate)
+  client = Client.production(production, certificate: certificate)
 rescue ArgumentError => e
   help! e.message
 end

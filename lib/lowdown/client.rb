@@ -9,6 +9,9 @@ require "json"
 module Lowdown
   # The main class to use for interactions with the Apple Push Notification HTTP/2 service.
   #
+  # Important connection configuration options are `pool_size` and `keep_alive`. The former specifies the number of
+  # simultaneous connections the client should make and the latter is key for long running processes.
+  #
   class Client
     # The details to connect to the development (sandbox) environment version of the APN service.
     #
@@ -20,93 +23,85 @@ module Lowdown
 
     # @!group Constructor Summary
 
-    class << self
-      # This is the most convenient constructor for regular use.
-      #
-      # It then calls {Client.client}.
-      #
-      # @param  [Boolean] production
-      #         whether to use the production or the development environment.
-      #
-      # @param  [Certificate, String] certificate_or_data
-      #         a configured Certificate or PEM data to construct a Certificate from.
-      #
-      # @raise  [ArgumentError]
-      #         raised if the provided Certificate does not support the requested environment.
-      #
-      # @return (see Client#initialize)
-      #
-      def production(production, certificate_or_data)
-        certificate = Certificate.certificate(certificate_or_data)
-        if production
-          unless certificate.production?
-            raise ArgumentError, "The specified certificate is not usable with the production environment."
-          end
-        else
-          unless certificate.development?
-            raise ArgumentError, "The specified certificate is not usable with the development environment."
-          end
+    # This is the most convenient constructor for regular use.
+    #
+    # @param  [Boolean] production
+    #         whether to use the production or the development environment.
+    #
+    # @param  [Certificate, String] certificate
+    #         a configured Certificate or PEM data to construct a Certificate from.
+    #
+    # @param  [Fixnum] pool_size
+    #         the number of connections to make.
+    #
+    # @param  [Boolean] keep_alive
+    #         when `true` this will make connections, new and restarted, immediately connect to the remote service. Use
+    #         this if you want to keep connections open indefinitely.
+    #
+    # @raise  [ArgumentError]
+    #         raised if the provided Certificate does not support the requested environment.
+    #
+    # @return (see Client#initialize)
+    #
+    def self.production(production, certificate:, pool_size: 1, keep_alive: false)
+      certificate = Certificate.certificate(certificate)
+      if production
+        unless certificate.production?
+          raise ArgumentError, "The specified certificate is not usable with the production environment."
         end
-        client(production ? PRODUCTION_URI : DEVELOPMENT_URI, certificate)
-      end
-
-      # Creates a connection that connects to the specified `uri`.
-      #
-      # It then calls {Client.client_with_connection}.
-      #
-      # @note   The connection actor is terminated once the client is garbage collected.
-      #
-      # @param  [URI] uri
-      #         the endpoint details of the service to connect to.
-      #
-      # @param  [Certificate, String] certificate_or_data
-      #         a configured Certificate or PEM data to construct a Certificate from.
-      #
-      # @return (see Client#initialize)
-      #
-      def client(uri, certificate_or_data)
-        certificate = Certificate.certificate(certificate_or_data)
-        connection = Connection.new(uri, certificate.ssl_context)
-        client_with_connection(connection, certificate).tap do |client|
-          ObjectSpace.define_finalizer(client, generate_finalizer(connection))
+      else
+        unless certificate.development?
+          raise ArgumentError, "The specified certificate is not usable with the development environment."
         end
       end
+      client(uri: production ? PRODUCTION_URI : DEVELOPMENT_URI,
+             certificate: certificate,
+             pool_size: pool_size,
+             keep_alive: keep_alive)
+    end
 
-      # Creates a Client configured with the `app_bundle_id` as its `default_topic`, in case the Certificate represents
-      # a Universal Certificate.
-      #
-      # @param  [Connection] connection
-      #         a Connection configured to connect to the remote service.
-      #
-      # @param  [Certificate] certificate
-      #         a configured Certificate.
-      #
-      # @return (see Client#initialize)
-      #
-      def client_with_connection(connection, certificate)
-        new(connection, certificate.universal? ? certificate.topics.first : nil)
-      end
+    # Creates a connection pool that connects to the specified `uri`.
+    #
+    # @param  [URI] uri
+    #         the endpoint details of the service to connect to.
+    #
+    # @param  [Certificate, String] certificate
+    #         a configured Certificate or PEM data to construct a Certificate from.
+    #
+    # @param  [Fixnum] pool_size
+    #         the number of connections to make.
+    #
+    # @param  [Boolean] keep_alive
+    #         when `true` this will make connections, new and restarted, immediately connect to the remote service. Use
+    #         this if you want to keep connections open indefinitely.
+    #
+    # @return (see Client#initialize)
+    #
+    def self.client(uri:, certificate:, pool_size: 1, keep_alive: false)
+      certificate = Certificate.certificate(certificate)
+      connection_pool = Connection.pool(size: pool_size, args: [uri, certificate.ssl_context, keep_alive])
+      client_with_connection(connection_pool, certificate: certificate)
+    end
 
-      private
-
-      # Create the connection finalizer proc in isolation so that it does not capture the client and introduce a
-      # retain-cycle.
-      #
-      # @param  [Celluloid::Proxy::Cell] connection
-      #         the connection to terminate.
-      #
-      # @return [Proc]
-      #         a finalizer proc that terminates the connection.
-      #
-      def generate_finalizer(connection)
-        proc { connection.terminate }
-      end
+    # Creates a Client configured with the `app_bundle_id` as its `default_topic`, in case the Certificate represents
+    # a Universal Certificate.
+    #
+    # @param  [Connection, Celluloid::Supervision::Container::Pool<Connection>] connection
+    #         a single Connection or a pool of Connection actors configured to connect to the remote service.
+    #
+    # @param  [Certificate] certificate
+    #         a configured Certificate.
+    #
+    # @return (see Client#initialize)
+    #
+    def self.client_with_connection(connection, certificate:)
+      new(connection: connection, default_topic: certificate.universal? ? certificate.topics.first : nil)
     end
 
     # You should normally use any of the other constructors to create a Client object.
     #
-    # @param  [Connection] connection
-    #         a Connection configured to connect to the remote service.
+    # @param  [Connection, Celluloid::Supervision::Container::Pool<Connection>] connection
+    #         a single Connection or a pool of Connection actors configured to connect to the remote service.
     #
     # @param  [String] default_topic
     #         the ‘topic’ to use if the Certificate is a Universal Certificate and a Notification doesn’t explicitely
@@ -115,14 +110,14 @@ module Lowdown
     # @return [Client]
     #         a new instance of Client.
     #
-    def initialize(connection, default_topic = nil)
+    def initialize(connection:, default_topic: nil)
       @connection, @default_topic = connection, default_topic
     end
 
     # @!group Instance Attribute Summary
 
-    # @return [Connection]
-    #         a Connection configured to connect to the remote service.
+    # @return [Connection, Celluloid::Supervision::Container::Pool<Connection>]
+    #         a single Connection or a pool of Connection actors configured to connect to the remote service.
     #
     attr_reader :connection
 
@@ -137,15 +132,17 @@ module Lowdown
     # Opens the connection to the service, yields a request group, and automatically closes the connection by the end of
     # the block.
     #
-    # @see Connection#open
-    # @see Client#group
+    # @note   Don’t use this if you opted to keep a pool of connections alive.
+    #
+    # @see    Connection#connect
+    # @see    Client#group
     #
     # @yieldparam (see Client#group)
     #
     # @return [void]
     #
     def connect(&block)
-      @connection.open
+      @connection.connect
       if block
         begin
           group(&block)
@@ -153,7 +150,18 @@ module Lowdown
           disconnect
         end
       end
-      nil
+    end
+
+    # Closes the connection to the service.
+    #
+    # @see    Connection#disconnect
+    #
+    # @return [void]
+    #
+    def disconnect
+      @connection.disconnect
+    rescue Celluloid::DeadActorError
+      # Rescue this exception instead of calling #alive? as that only works on an actor, not a pool.
     end
 
     # Use this to group a batch of requests and halt the caller thread until all of the requests in the group have been
@@ -177,20 +185,13 @@ module Lowdown
       group.terminate
     end
 
-    # Closes the connection to the service.
+    # Verifies the `notification` is valid and then sends it to the remote service. Response feedback is provided via
+    # a delegate mechanism.
     #
-    # @return [void]
+    # @note   In general, you will probably want to use {#group} to be able to use {RequestGroup#send_notification},
+    #         which takes a traditional blocks-based callback approach.
     #
-    def disconnect
-      @connection.close
-      nil
-    end
-
-    # Verifies the `notification` is valid and sends it to the remote service.
-    #
-    # @see Connection#post
-    #
-    # @note (see Connection#post)
+    # @see    Connection#post
     #
     # @param  [Notification] notification
     #         the notification object whose data to send to the service.

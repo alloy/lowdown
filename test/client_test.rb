@@ -15,51 +15,36 @@ module Lowdown
 
       it "configures a connection to the production environment" do
         @certificate.certificate.extensions = [OpenSSL::X509::Extension.new(Certificate::PRODUCTION_ENV_EXTENSION, "..")]
-        client = Client.production(true, @certificate)
+        client = Client.production(true, certificate: @certificate)
         client.connection.uri.must_equal Client::PRODUCTION_URI
       end
 
       it "configures a connection to the development environment" do
         @certificate.certificate.extensions = [OpenSSL::X509::Extension.new(Certificate::DEVELOPMENT_ENV_EXTENSION, "..")]
-        client = Client.production(false, @certificate)
+        client = Client.production(false, certificate: @certificate)
         client.connection.uri.must_equal Client::DEVELOPMENT_URI
       end
 
       it "configures a connection with the given uri" do
-        client = Client.client(@uri, @certificate)
+        client = Client.client(uri: @uri, certificate: @certificate)
         client.connection.uri.must_equal @uri
       end
 
       it "configures a connection with PEM data" do
-        client = Client.client(@uri, @certificate.to_pem)
+        client = Client.client(uri: @uri, certificate: @certificate.to_pem)
         client.connection.ssl_context.key.to_pem.must_equal @certificate.key.to_pem
         client.connection.ssl_context.cert.to_pem.must_equal @certificate.certificate.to_pem
       end
 
       it "has no default topic if the certificate is not a Universal Certificate" do
         @certificate.certificate.extensions = []
-        client = Client.client(@uri, @certificate)
+        client = Client.client(uri: @uri, certificate: @certificate)
         client.default_topic.must_equal nil
       end
 
       it "uses the app bundle ID as the default topic in case of a Universal Certificate" do
-        client = Client.client(@uri, @certificate)
+        client = Client.client(uri: @uri, certificate: @certificate)
         client.default_topic.must_equal "com.example.MockAPNS"
-      end
-
-      it "configures the connection actor to be terminated when the client is garbage collected" do
-        client = WeakRef.new(Client.client(@uri, @certificate))
-        connection = client.connection
-        connection.alive?.must_equal true
-        GC.start
-        connection.alive?.must_equal false
-      end
-
-      it "does not indefinitely retain the client (paranoia test for the connection finalizer)" do
-        client = WeakRef.new(Client.client(@uri, @certificate))
-        (!!client.weakref_alive?).must_equal true
-        GC.start
-        (!!client.weakref_alive?).must_equal false
       end
     end
 
@@ -68,14 +53,14 @@ module Lowdown
 
       before do
         @connection = Mock::Connection.new
-        @client = Client.new(@connection, "com.example.MockAPNS")
+        @client = Client.new(connection: @connection, default_topic: "com.example.MockAPNS")
       end
 
       it "opens the connection for the duration of the block and then closes it" do
         opened_connection = false
-        @client.connect { opened_connection = @client.connection.open? }
+        @client.connect { opened_connection = @client.connection.connected? }
         opened_connection.must_equal true
-        @client.connection.open?.must_equal false
+        @client.connection.connected?.must_equal false
       end
 
       it "yields a request group" do

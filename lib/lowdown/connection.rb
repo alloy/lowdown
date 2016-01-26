@@ -53,7 +53,7 @@ module Lowdown
   class Connection
     include Celluloid::IO
     include Celluloid::Internals::Logger
-    finalizer :close
+    finalizer :disconnect
 
     # @param  [URI, String] uri
     #         the details to connect to the APN service.
@@ -61,8 +61,18 @@ module Lowdown
     # @param  [OpenSSL::SSL::SSLContext] ssl_context
     #         a SSL context, configured with the certificate/key pair, which is used to connect to the APN service.
     #
-    def initialize(uri, ssl_context)
+    # @param  [Boolean] connect
+    #         whether or not to immediately connect on initialization.
+    #
+    def initialize(uri, ssl_context, connect = true)
       @uri, @ssl_context = URI(uri), ssl_context
+      reset_state!
+
+      if connect
+        # This ensures that calls to the public #connect method are ignored while already connecting.
+        @connecting = true
+        async.connect!
+      end
     end
 
     # @return [URI]
@@ -79,12 +89,40 @@ module Lowdown
     #
     # @return [void]
     #
-    def open
-      return if @connection
-      debug "Opening new APNS connection."
+    def connect
+      connect! unless @connecting
+    end
 
-      @connected = false
-      @request_queue = []
+    # Closes the connection and resets the internal state
+    #
+    # @return [void]
+    #
+    def disconnect
+      @connection.close if @connection
+      @ping_timer.cancel if @ping_timer
+      reset_state!
+    end
+
+    # This performs a HTTP/2 PING to determine if the connection is actually alive. Be sure to not call this on a
+    # sleeping connection, or it will be guaranteed to fail.
+    #
+    # @param  [Numeric] timeout
+    #         the maximum amount of time to wait for the service to reply to the PING.
+    #
+    # @return [Boolean]
+    #         whether or not the Connection is open.
+    #
+    def connected?
+      !@connection.nil? && !@connection.closed?
+    end
+
+    private
+
+    def connect!
+      return if @connection
+      @connecting = true
+
+      info "Opening APNS connection."
 
       @connection = SSLSocket.new(TCPSocket.new(@uri.host, @uri.port), @ssl_context)
       @connection.sync_close = true
@@ -99,37 +137,12 @@ module Lowdown
       async.runloop
     end
 
-    # Closes the connection and resets the internal state
-    #
-    # @return [void]
-    #
-    def close
-      @connection.close if @connection
-      @connection = @http = @connected = @request_queue = nil
+    def reset_state!
+      @connecting = false
+      @connected = false
+      @request_queue = []
+      @connection = @http = @ping_timer = nil
     end
-
-    # This performs a HTTP/2 PING to determine if the connection is actually alive. Be sure to not call this on a
-    # sleeping connection, or it will be guaranteed to fail.
-    #
-    # @param  [Numeric] timeout
-    #         the maximum amount of time to wait for the service to reply to the PING.
-    #
-    # @return [Boolean]
-    #         whether or not the Connection is open.
-    #
-    def open?
-      !@connection.nil? && !@connection.closed?
-      #condition = Celluloid::Condition.new
-      #future = Celluloid::Future.new { condition.wait }
-      #unless @connection.nil? || @connection.closed?
-        #@http.ping("whatever") { condition.signal(true) }
-      #else
-        #condition.signal(false)
-      #end
-      #future
-    end
-
-    private
 
     # The main IO runloop that feeds data from the remote service into the HTTP/2 client.
     #
@@ -217,7 +230,6 @@ module Lowdown
     # @return [void]
     #
     def post(path:, headers:, body:, delegate:, context: nil)
-      raise "First open the connection." unless @connection
       request('POST', path, headers, body, delegate, context)
     end
 

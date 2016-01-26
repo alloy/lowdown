@@ -5,7 +5,7 @@ module Lowdown
   describe Client::RequestGroup do
     before do
       @connection = Mock::Connection.new
-      @client = Client.new(@connection, "com.example.MockAPNS")
+      @client = Client.new(connection: @connection, default_topic: "com.example.MockAPNS")
       @client.connect
 
       @group = Client::RequestGroup.new(@client)

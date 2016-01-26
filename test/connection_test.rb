@@ -18,27 +18,31 @@ module Lowdown
 
     before do
       server ||= MockAPNS.new.tap(&:run)
-      ssl_context = OpenSSL::SSL::SSLContext.new
-      ssl_context.cert = server.certificate
-      ssl_context.key = server.pkey
-      @connection = Connection.new(server.uri, ssl_context)
+      @ssl_context = OpenSSL::SSL::SSLContext.new
+      @ssl_context.cert = server.certificate
+      @ssl_context.key = server.pkey
     end
 
     after do
       @connection.terminate if @connection.alive?
     end
 
-    it "returns whether or not the connection is open" do
-      @connection.open?.must_equal false
-      @connection.open
-      @connection.open?.must_equal true
-      @connection.close
-      @connection.open?.must_equal false
+    it "immediately connects by default" do
+      @connection = Connection.new(server.uri, @ssl_context)
+      lambda { @connection.connected? }.must_eventually_pass
+    end
+
+    it "does not try to double connect when calling connect after already connecting at initialization" do
+      @connection = Connection.new(server.uri, @ssl_context, true)
+      @connection.connect
+      @connection.connect
+      lambda { @connection.connected? }.must_eventually_pass
     end
 
     describe "with a connection" do
       before do
-        @connection.open
+        @connection = Connection.new(server.uri, @ssl_context, false)
+        @connection.connect
 
         # So, our test server does not behave exactly the same as the APNS service, which would normally be:
         # 1. The preface dance is done
@@ -56,8 +60,10 @@ module Lowdown
         @delegate = MockDelegate.new
       end
 
-      after do
-        @connection.close if @connection.alive?
+      it "returns whether or not the connection is connected" do
+        @connection.connected?.must_equal true
+        @connection.disconnect
+        @connection.connected?.must_equal false
       end
 
       describe "concerning the connection life-cycle" do
