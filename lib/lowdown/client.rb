@@ -1,6 +1,7 @@
 require "lowdown/client/request_group"
 require "lowdown/certificate"
 require "lowdown/connection"
+require "lowdown/connection/monitor"
 require "lowdown/notification"
 
 require "uri"
@@ -170,7 +171,11 @@ module Lowdown
     # It proxies {RequestGroup#send_notification} to {Client#send_notification}, but, unlike the latter, the request
     # callbacks are provided in the form of a block.
     #
+    # @note   Do **not** share the yielded group across threads. For the duration of the block, In the connection will
+    #         be monitored for exceptions and, if any, raise them on the calling thread.
+    #
     # @see    RequestGroup#send_notification
+    # @see    Connection::Monitor
     #
     # @yieldparam [RequestGroup] group
     #         the request group object.
@@ -179,10 +184,27 @@ module Lowdown
     #
     def group
       group = RequestGroup.new(self)
-      yield group
-      group.flush
+      monitor do
+        yield group
+        group.flush
+      end
     ensure
       group.terminate
+    end
+
+    # Creates a {Connection::Monitor} and monitors the connection for the duration of the given block. Exceptions that
+    # occur on the connection, or connections in the pool, will be raised on the caller thread. Thus you should halt the
+    # caller thread while waiting for your work to finish.
+    #
+    # This is automatically used by {#group}.
+    #
+    # @return [void]
+    #
+    def monitor
+      monitor = Connection::Monitor.monitor(@connection) if @connection.is_a?(Celluloid) # Ignore mock connections.
+      yield
+    ensure
+      monitor.terminate if monitor
     end
 
     # Verifies the `notification` is valid and then sends it to the remote service. Response feedback is provided via

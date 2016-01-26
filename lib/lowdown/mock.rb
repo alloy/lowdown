@@ -129,15 +129,23 @@ module Lowdown
       # Yields stubbed {#responses} or if none are available defaults to success responses. It does this on a different
       # thread, just like the real API does.
       #
+      # To make the connection simulate being closed from the other end, specify the `test-close-connection` header.
+      #
       # @param (see Lowdown::Connection#post)
       # @yield (see Lowdown::Connection#post)
       # @yieldparam (see Lowdown::Connection#post)
       # @return (see Lowdown::Connection#post)
       #
       def post(path:, headers:, body:, delegate:, context: nil)
-        response = @responses.shift || Response.new(":status" => "200", "apns-id" => headers["apns-id"])
         raise "First open the connection." unless @connected
+
+        unless headers["test-close-connection"]
+          response = @responses.shift || Response.new(":status" => "200", "apns-id" => headers["apns-id"])
+        end
         @requests << Request.new(path, headers, body, response, delegate, context)
+
+        raise EOFError, "Stubbed EOF" if headers["test-close-connection"]
+
         delegate.handle_apns_response(response, context: context)
       end
 

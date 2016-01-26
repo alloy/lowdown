@@ -69,6 +69,17 @@ module Lowdown
         yielded_group.class.must_equal Client::RequestGroup
       end
 
+      it "raises exceptions that crash connection actors in the caller thread" do
+        @client.connect
+        lambda do
+          Timeout.timeout(5) do
+            @client.group do |group|
+              @client.connection.post(path: "/3/device/some-device-token", headers: { "test-close-connection" => "true" }, body: "♥", delegate: group.callbacks)
+            end
+          end
+        end.must_raise EOFError
+      end
+
       describe "when sending a notification" do
         parallelize_me!
 
