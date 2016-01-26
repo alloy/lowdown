@@ -143,7 +143,11 @@ module Lowdown
     # @return [void]
     #
     def connect(&block)
-      @connection.connect
+      if @connection.respond_to?(:actors)
+        @connection.actors.each { |connection| connection.async.connect }
+      else
+        @connection.async.connect
+      end
       if block
         begin
           group(&block)
