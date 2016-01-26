@@ -6,7 +6,9 @@ include Lowdown
 require "json"
 require "optparse"
 
-options = { :payload => {}, :custom_data => {} }
+Celluloid.logger.level = Logger::WARN
+
+options = { :payload => {}, :custom_data => {}, :pool_size => 1 }
 
 OPTION_PARSER = OptionParser.new do |opts|
   opts.banner = "Usage: lowdown [options] <tokens …>"
@@ -16,7 +18,7 @@ OPTION_PARSER = OptionParser.new do |opts|
     exit
   end
 
-  opts.on("-m", "--alert ALERT", "Body of the alert to send in the push notification") do |alert|
+  opts.on("-m", "--alert ALERT", "Body of the alert to send in the push notification (the %d format code will be replaced by the notification ID)") do |alert|
     options[:alert] = alert
   end
 
@@ -56,6 +58,19 @@ OPTION_PARSER = OptionParser.new do |opts|
   opts.on("-p", "--passphrase PASSPHRASE", "Certificate passphrase") do |passphrase|
     options[:certificate_passphrase] = passphrase
   end
+
+  opts.on("-n", "--connections NUMBER", "Number of simultaneous connections to make") do |pool_size|
+    options[:pool_size] = pool_size.to_i
+  end
+
+  opts.on("--debug", "Debug logging") do
+    Celluloid.logger.level = Logger::INFO
+  end
+
+  opts.on("--verbose", "Verbose logging") do
+    $CELLULOID_DEBUG = true
+    Celluloid.logger.level = Logger::DEBUG
+  end
 end
 
 OPTION_PARSER.parse!
@@ -89,7 +104,7 @@ else
 end
 
 begin
-  client = Client.production(production, certificate: certificate)
+  client = Client.production(production, certificate: certificate, pool_size: options[:pool_size])
 rescue ArgumentError => e
   help! e.message
 end
@@ -109,13 +124,16 @@ if tokens.empty?
 end
 
 notifications = tokens.map do |token|
-  Notification.new(:token => token, :payload => payload, :topic => options[:topic])
+  Notification.new(:token => token, :payload => payload.dup, :topic => options[:topic]).tap do |notification|
+    notification.payload["alert"] = notification.payload["alert"] % notification.id
+  end
 end
 
 client.connect do |group|
   notifications.each do |notification|
     group.send_notification(notification) do |response|
-      puts "[#{notification.token} ##{notification.id}] #{response}"
+      Celluloid.logger.unknown "[#{notification.token} ##{notification.id}] #{response}"
     end
   end
 end
+
