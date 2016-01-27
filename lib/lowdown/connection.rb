@@ -1,4 +1,3 @@
-require "lowdown/threading"
 require "lowdown/response"
 
 require "http/2"
@@ -7,6 +6,9 @@ require "openssl"
 require "socket"
 require "timeout"
 require "uri"
+
+require "celluloid/current"
+require "celluloid/io"
 
 if HTTP2::VERSION == "0.8.0"
   # @!visibility private
@@ -49,14 +51,36 @@ module Lowdown
   # It manages both the SSL connection and processing of the HTTP/2 data sent back and forth over that connection.
   #
   class Connection
+    class TimedOut < StandardError; end
+
+    CONNECT_RETRIES       = 5
+    CONNECT_RETRY_BACKOFF = 5
+    CONNECT_TIMEOUT       = 10
+    HEARTBEAT_INTERVAL    = 10
+    HEARTBEAT_TIMEOUT     = CONNECT_TIMEOUT
+
+    include Celluloid::IO
+    include Celluloid::Internals::Logger
+    finalizer :disconnect
+
     # @param  [URI, String] uri
     #         the details to connect to the APN service.
     #
     # @param  [OpenSSL::SSL::SSLContext] ssl_context
     #         a SSL context, configured with the certificate/key pair, which is used to connect to the APN service.
     #
-    def initialize(uri, ssl_context)
+    # @param  [Boolean] connect
+    #         whether or not to immediately connect on initialization.
+    #
+    def initialize(uri, ssl_context, connect = true)
       @uri, @ssl_context = URI(uri), ssl_context
+      reset_state!
+
+      if connect
+        # This ensures that calls to the public #connect method are ignored while already connecting.
+        @connecting = true
+        async.connect!
+      end
     end
 
     # @return [URI]
@@ -69,63 +93,188 @@ module Lowdown
     #
     attr_reader :ssl_context
 
-    # Creates a new SSL connection to the service, a HTTP/2 client, and starts off a worker thread.
+    # Creates a new SSL connection to the service, a HTTP/2 client, and starts off the main runloop.
     #
     # @return [void]
     #
-    def open
-      raise "Connection already open." if @worker
-      @requests = Threading::Counter.new
-      @worker = Worker.new(@uri, @ssl_context)
+    def connect
+      connect! unless @connecting
     end
 
-    # Flushes the connection, terminates the worker thread, and closes the socket. Finally it peforms one more check for
-    # pending jobs dispatched onto the main thread.
+    # Closes the connection and resets the internal state
     #
     # @return [void]
     #
-    def close
-      return unless @worker
-      flush
-      @worker.stop
-      @worker = @requests = nil
+    def disconnect
+      @connection.close if @connection
+      @heartbeat.cancel if @heartbeat
+      reset_state!
     end
 
-    # This performs a HTTP/2 PING to determine if the connection is actually alive.
-    #
-    # @param  [Numeric] timeout
-    #         the maximum amount of time to wait for the service to reply to the PING.
-    #
     # @return [Boolean]
     #         whether or not the Connection is open.
     #
-    def open?(timeout = 5)
-      return false unless @worker
-      Timeout.timeout(timeout) do
-        caller_thread = Thread.current
-        @worker.enqueue do |http|
-          http.ping('whatever') { caller_thread.run }
-        end
-        Thread.stop
-      end
-      # If the thread was woken-up before the timeout was reached, that means we got a PONG.
-      true
-    rescue Timeout::Error
-      false
+    def connected?
+      !@connection.nil? && !@connection.closed?
     end
 
-    # Halts the calling thread until all dispatched requests have been performed.
+    # This performs a HTTP/2 PING to determine if the connection is actually alive. Be sure to not call this on a
+    # sleeping connection, or it will be guaranteed to fail.
+    #
+    # @note   This halts the caller thread until a reply is received. You should call this on a future and possibly set
+    #         a timeout.
+    #
+    # @return [Boolean]
+    #         whether or not a reply was received.
+    #
+    def ping
+      if connected?
+        condition = Celluloid::Condition.new
+        @http.ping("whatever") { condition.signal(true) }
+        condition.wait
+      else
+        false
+      end
+    end
+
+    private
+
+    def connect!(tries = 0)
+      return if @connection
+      @connecting = true
+
+      info "Opening APNS connection."
+
+      # Celluloid::IO::DNSResolver bug. In case there is no connection at all:
+      # 1. This results in `nil`:
+      #    https://github.com/celluloid/celluloid-io/blob/85cee9da22ef5e94ba0abfd46454a2d56572aff4/lib/celluloid/io/dns_resolver.rb#L32
+      # 2. This tries to `NilClass#send` the hostname:
+      #    https://github.com/celluloid/celluloid-io/blob/85cee9da22ef5e94ba0abfd46454a2d56572aff4/lib/celluloid/io/dns_resolver.rb#L44
+      begin
+        socket = TCPSocket.new(@uri.host, @uri.port)
+      rescue NoMethodError
+        raise SocketError, "(Probably) getaddrinfo: nodename nor servname provided, or not known"
+      end
+
+      @connection = SSLSocket.new(socket, @ssl_context)
+      begin
+        timeout(CONNECT_TIMEOUT) { @connection.connect }
+      rescue Celluloid::TimedOut
+        raise TimedOut, "Initiating SSL socket timed-out."
+      end
+
+      @http = HTTP2::Client.new
+      @http.on(:frame) do |bytes|
+        @connection.print(bytes)
+        @connection.flush
+      end
+
+      async.runloop
+
+    rescue Celluloid::TaskTerminated, Celluloid::DeadActorError
+      # These are legit, let them bubble up.
+      raise
+    rescue Exception => e
+      # The main reason to do connect retries ourselves, instead of letting it up a supervisor/pool, is because a pool
+      # goes into a bad state if a connection crashes on initialization.
+      @connection.close if @connection && !@connection.closed?
+      @connection = @http = nil
+      if tries < CONNECT_RETRIES
+        tries += 1
+        delay = tries * CONNECT_RETRY_BACKOFF
+        error("#{e.class}: #{e.message} - retrying in #{delay} seconds (#{tries}/#{CONNECT_RETRIES})")
+        after(delay) { async.connect!(tries) }
+        return
+      else
+        raise
+      end
+    end
+
+    def reset_state!
+      @connecting = false
+      @connected = false
+      @request_queue = []
+      @connection = @http = @heartbeat = nil
+    end
+
+    # The main IO runloop that feeds data from the remote service into the HTTP/2 client.
+    #
+    # It should only ever exit gracefully if the connection has been closed with {#close} or the actor has been
+    # terminated. Otherwise this method may raise any connection or HTTP/2 parsing related exception, which will kill
+    # the actor and, if supervised, start a new connection.
     #
     # @return [void]
     #
-    def flush
-      return unless @worker
-      sleep 0.1 until !@worker.working? && @requests.zero?
+    def runloop
+      loop do
+        begin
+          @http << @connection.readpartial(1024)
+          change_to_connected_state if !@connected && @http.state == :connected
+        rescue IOError => e
+          if @connection
+            raise
+          else
+            # Connection was closed by us and set to nil, so exit gracefully
+            break
+          end
+        end
+      end
+    end
+
+    # Called when the HTTP client changes its state to `:connected`.
+    #
+    # @return [void]
+    #
+    def change_to_connected_state
+      @max_stream_count = @http.remote_settings[:settings_max_concurrent_streams]
+      @connected = true
+
+      debug "APNS connection established. Maximum number of concurrent streams: #{@max_stream_count}. " \
+            "Flushing #{@request_queue.size} enqueued requests."
+
+      @request_queue.size.times do
+        async.try_to_perform_request!
+      end
+
+      @heartbeat = every(HEARTBEAT_INTERVAL) do
+        debug "Sending heartbeat ping"
+        begin
+          future.ping.call(HEARTBEAT_TIMEOUT)
+        rescue Celluloid::TimedOut
+          raise TimedOut, "Heartbeat ping timed-out."
+        end
+      end
+    end
+
+    public
+
+    # This module describes the interface that your delegate object should conform to, but it is not required to include
+    # this module in your class, it mainly serves a documentation purpose.
+    #
+    module DelegateProtocol
+      # Called when a request is finished and a response is available.
+      #
+      # @note   (see Connection#post)
+      #
+      # @param  [Response] response
+      #         the Response that holds the status data that came back from the service.
+      #
+      # @param  [Object, nil] context
+      #         the context passed in when making the request.
+      #
+      # @return [void]
+      #
+      def handle_apns_response(response, context:)
+        raise NotImplementedError
+      end
     end
 
     # Sends the provided data as a `POST` request to the service.
     #
-    # @note The callback is performed on a different thread, dedicated to perfoming these callbacks.
+    # @note   It is strongly advised that the delegate object is a Celluloid actor and that you pass in an async proxy
+    #         of that object, but that is not required. If you do not pass in an actor, then be advised that the
+    #         callback will run on this connection’s private thread and thus you should not perform long blocking
+    #         operations.
     #
     # @param  [String] path
     #         the request path, which should be `/3/device/<device-token>`.
@@ -136,152 +285,74 @@ module Lowdown
     # @param  [String] body
     #         the (JSON) encoded payload data to send to the service.
     #
-    # @yield  [response]
-    #         called when the request is finished and a response is available.
+    # @param  [DelegateProtocol] delegate
+    #         an object that implements the delegate protocol.
     #
-    # @yieldparam [Response] response
-    #         the Response that holds the status data that came back from the service.
+    # @param  [Object, nil] context
+    #         any object that you want to be passed to the delegate once the response is back.
     #
     # @return [void]
     #
-    def post(path, headers, body, &callback)
-      request('POST', path, headers, body, &callback)
+    def post(path:, headers:, body:, delegate:, context: nil)
+      request('POST', path, headers, body, delegate, context)
     end
 
     private
 
-    def request(method, path, custom_headers, body, &callback)
-      @requests.increment!
-      @worker.enqueue do |http, callbacks|
-        headers = { ":method" => method.to_s, ":path" => path.to_s, "content-length" => body.bytesize.to_s }
-        custom_headers.each { |k, v| headers[k] = v.to_s }
+    Request = Struct.new(:headers, :body, :delegate, :context)
 
-        stream = http.new_stream
-        response = Response.new
+    def request(method, path, custom_headers, body, delegate, context)
+      headers = { ":method" => method.to_s, ":path" => path.to_s, "content-length" => body.bytesize.to_s }
+      custom_headers.each { |k, v| headers[k] = v.to_s }
 
-        stream.on(:headers) do |response_headers|
-          response.headers = Hash[*response_headers.flatten]
-        end
+      request = Request.new(headers, body, delegate, context)
+      @request_queue << request
 
-        stream.on(:data) do |response_data|
-          response.raw_body ||= ''
-          response.raw_body << response_data
-        end
-
-        stream.on(:close) do
-          callbacks.enqueue do
-            callback.call(response)
-            @requests.decrement!
-          end
-        end
-
-        stream.headers(headers, end_stream: false)
-        stream.data(body, end_stream: true)
-      end
+      try_to_perform_request!
     end
 
-    # @!visibility private
-    #
-    # Creates a new worker thread which maintains all its own state:
-    # * SSL connection
-    # * HTTP2 client
-    # * Another thread from where request callbacks are ran
-    #
-    class Worker < Threading::Consumer
-      def initialize(uri, ssl_context)
-        @uri, @ssl_context = uri, ssl_context
-
-        # Start the worker thread.
-        #
-        # Because a max size of 0 is not allowed, create with an initial max size of 1 and add a dummy job. This is so
-        # that any attempt to add a new job to the queue is going to halt the calling thread *until* we change the max.
-        super(queue: Thread::SizedQueue.new(1))
-        # Put caller thread into sleep until connected.
-        Thread.stop
+    def try_to_perform_request!
+      unless @connected
+        debug "Defer performing request, because the connection has not been established yet"
+        return
       end
 
-      # Tells the runloop to stop and halts the caller until finished.
-      #
-      # @return [void]
-      #
-      def stop
-        thread[:should_exit] = true
-        thread.join
+      unless @http.active_stream_count < @max_stream_count
+        debug "Defer performing request, because the maximum concurren stream count has been reached"
+        return
       end
 
-      # @return [Boolean]
-      #         whether or not the worker is still alive and kicking.
-      #
-      def working?
-        alive? && !empty? && !@callbacks.empty?
+      unless request = @request_queue.shift
+        debug "Defer performing request, because the request queue is empty"
+        return
       end
 
-      private
+      apns_id = request.headers["apns-id"]
+      debug "[#{apns_id}] Performing request"
 
-      def post_runloop
-        @callbacks.kill
-        @ssl.close
-        super
+      stream = @http.new_stream
+      response = Response.new
+
+      stream.on(:headers) do |headers|
+        headers = Hash[*headers.flatten]
+        debug "[#{apns_id}] Got response headers: #{headers.inspect}"
+        response.headers = headers
       end
 
-      def pre_runloop
-        super
-
-        # Setup the request callbacks consumer here so its parent thread will be this worker thread.
-        @callbacks = Threading::Consumer.new
-
-        @ssl = OpenSSL::SSL::SSLSocket.new(TCPSocket.new(@uri.host, @uri.port), @ssl_context)
-        @ssl.sync_close = true
-        @ssl.hostname = @uri.hostname
-        @ssl.connect
-
-        @http = HTTP2::Client.new
-        @http.on(:frame) do |bytes|
-          # This is going to be performed on the worker thread and thus does *not* write to @ssl from another thread than
-          # the thread it’s being read from.
-          @ssl.print(bytes)
-          @ssl.flush
-        end
+      stream.on(:data) do |data|
+        debug "[#{apns_id}] Got response data: #{data}"
+        response.raw_body ||= ''
+        response.raw_body << data
       end
 
-      # Called when the HTTP client changes its state to `:connected` and lets the parent thread (which was stopped in
-      # `#initialize`) continue.
-      #
-      # @return [void]
-      #
-      def change_to_connected_state
-        queue.max = @http.remote_settings[:settings_max_concurrent_streams]
-        @connected = true
-        parent_thread.run
+      stream.on(:close) do
+        debug "[#{apns_id}] Request completed"
+        request.delegate.handle_apns_response(response, context: request.context)
+        async.try_to_perform_request!
       end
 
-      # @note Only made into a method so it can be overriden from the tests, because our test setup doesn’t behave the
-      #       same as the real APNS service.
-      #
-      # @return [Boolean]
-      #         whether or not the HTTP client’s state is `:connected`.
-      #
-      def http_connected?
-        @http.state == :connected
-      end
-
-      # Start the main IO and HTTP processing loop.
-      def runloop
-        until thread[:should_exit] || @ssl.closed?
-          # Once connected, add requests while the max stream count has not yet been reached.
-          if !@connected
-            change_to_connected_state if http_connected?
-          elsif @http.active_stream_count < queue.max
-            # Run dispatched jobs that add new requests.
-            perform_job(non_block: true, arguments: [@http, @callbacks])
-          end
-          # Try to read data from the SSL socket without blocking and process it.
-          begin
-            @http << @ssl.read_nonblock(1024)
-          rescue IO::WaitReadable
-          end
-        end
-      end
+      stream.headers(request.headers, end_stream: false)
+      stream.data(request.body, end_stream: true)
     end
   end
 end

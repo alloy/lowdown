@@ -1,27 +1,14 @@
 require "test_helper"
 
-module Lowdown
-  class Connection
-    attr_reader :worker
+class MockDelegate
+  attr_reader :condition
 
-    class Worker
-      attr_reader :ssl, :callbacks
+  def initialize
+    @condition = Celluloid::Condition.new
+  end
 
-      # So, our test server does not behave exactly the same as the APNS service, which would normally be:
-      # 1. The preface dance is done
-      # 2. The server sends settings
-      # 3. The client changes state to :connected.
-      #
-      # In our test setup, step 1 and 2 seem to not work as expected and thus the client doesn’t change to the :connected
-      # state. Since it’s not that big of a deal, as it works in practice, this override ensures that our implementation
-      # does not halt indefinitely in our tests.
-      #
-      # TODO: Figure out what’s going wrong so this isn’t needed.
-      #
-      def http_connected?
-        true
-      end
-    end
+  def handle_apns_response(response, context:)
+    @condition.signal(response)
   end
 end
 
@@ -31,100 +18,94 @@ module Lowdown
 
     before do
       server ||= MockAPNS.new.tap(&:run)
-      ssl_context = OpenSSL::SSL::SSLContext.new
-      ssl_context.cert = server.certificate
-      ssl_context.key = server.pkey
-      @connection = Connection.new(server.uri, ssl_context)
+      @ssl_context = OpenSSL::SSL::SSLContext.new
+      @ssl_context.cert = server.certificate
+      @ssl_context.key = server.pkey
     end
 
-    #it "uses the certificate to connect" do
-      ## verifies that it *does* fail with the wrong certificate
-      #_, other_cert = MockAPNS.certificate_with_uid("com.example.other")
-      #connection = Lowdown::Connection.new(server.uri, other_cert)
-      #lambda { connection.open }.must_raise(OpenSSL::SSL::SSLError)
-    #end
-
-    it "returns whether or not the connection is open" do
-      @connection.open?.must_equal false
-      @connection.open
-      @connection.open?.must_equal true
-      @connection.close
-      @connection.open?.must_equal false
+    after do
+      @connection.terminate if @connection.alive?
     end
 
-    describe "when making a request" do
+    it "immediately connects by default" do
+      @connection = Connection.new(server.uri, @ssl_context)
+      lambda { @connection.connected? }.must_eventually_pass
+    end
+
+    it "does not try to double connect when calling connect after already connecting at initialization" do
+      @connection = Connection.new(server.uri, @ssl_context, true)
+      @connection.connect
+      @connection.connect
+      lambda { @connection.connected? }.must_eventually_pass
+    end
+
+    describe "with a connection" do
       before do
-        @connection.open
-        @connection.post("/3/device/some-device-token", { "apns-id" => 42 }, "♥") { |r| @response = r }
-        @connection.flush
+        @connection = Connection.new(server.uri, @ssl_context, false)
+        @connection.connect
 
-        @request = server.requests.last
+        # So, our test server does not behave exactly the same as the APNS service, which would normally be:
+        # 1. The preface dance is done
+        # 2. The server sends settings
+        # 3. The client changes state to :connected.
+        #
+        # In our test setup, step 1 and 2 seem to not work as expected and thus the client doesn’t change to the
+        # :connected state. Since it’s not that big of a deal, as it works in practice, this call ensures that our
+        # implementation does not halt indefinitely in our tests.
+        #
+        # TODO: Figure out what’s going wrong so this isn’t needed.
+        #
+        @connection.async.send(:change_to_connected_state)
+
+        @delegate = MockDelegate.new
       end
 
-      after do
-        @connection.close
+      it "returns whether or not the connection is connected" do
+        @connection.connected?.must_equal true
+        @connection.disconnect
+        @connection.connected?.must_equal false
       end
 
-      it "makes a POST request" do
-        @request.headers[":method"].must_equal "POST"
-      end
-
-      it "specifies the :path" do
-        @request.headers[":path"].must_equal "/3/device/some-device-token"
-      end
-
-      it "converts header values to strings" do
-        @request.headers["apns-id"].must_equal "42"
-      end
-
-      it "specifies the payload size in bytes" do
-        @request.headers["content-length"].must_equal "3"
-      end
-
-      it "sends the payload" do
-        @request.body.must_equal "♥".force_encoding(Encoding::BINARY)
-      end
-
-      it "yields the response" do
-        @response.status.must_equal 200
-        @response.unformatted_id.must_equal "42"
-      end
-    end
-
-    describe 'Worker' do
-      before do
-        @worker = Connection::Worker.new(@connection.uri, @connection.ssl_context)
-      end
-
-      after do
-        @worker.stop
-      end
-
-      it "closes the ssl connection if an exception occurred" do
-        begin
-          @worker.enqueue do
-            sleep 0.1 # ensure the caller thread first stops
-            raise EOFError, "eof"
+      describe "concerning the connection life-cycle" do
+        it "raises if the service closes the connection" do
+          silence_logger do
+            @connection.async.post(path: "/3/device/some-device-token", headers: { "test-close-connection" => "true" }, body: "♥", delegate: @delegate)
+            lambda { !@connection.alive? }.must_eventually_pass
           end
-          Thread.stop
-        rescue EOFError
         end
-        lambda { @worker.ssl.closed? }.must_eventually_pass
       end
 
-      it "raises exceptions that occur on the callbacks queue and cleans up" do
-        lambda do
-          Timeout.timeout(1) do
-            @worker.send(:callbacks).enqueue do
-              sleep 0.1 # ensure the caller thread first stops
-              raise ArgumentError
-            end
-            Thread.stop
-          end
-        end.must_raise ArgumentError
-        lambda do
-          !@worker.alive? && @worker.ssl.closed?
-        end.must_eventually_pass
+      describe "when making a request" do
+        before do
+          @connection.async.post(path: "/3/device/some-device-token", headers: { "apns-id" => 42 }, body: "♥", delegate: @delegate)
+          @response = @delegate.condition.wait
+          @request = server.requests.last
+        end
+
+        it "makes a POST request" do
+          @request.headers[":method"].must_equal "POST"
+        end
+
+        it "specifies the :path" do
+          @request.headers[":path"].must_equal "/3/device/some-device-token"
+        end
+
+        it "converts header values to strings" do
+          @request.headers["apns-id"].must_equal "42"
+        end
+
+        it "specifies the payload size in bytes" do
+          @request.headers["content-length"].must_equal "3"
+        end
+
+        it "sends the payload" do
+          @request.body.must_equal "♥".force_encoding(Encoding::BINARY)
+        end
+
+        it "yields the response" do
+          @response.status.must_equal 200
+          @response.id.end_with?("42").must_equal true
+        end
       end
     end
   end

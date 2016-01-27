@@ -8,6 +8,15 @@ module Lowdown
     # @!visibility private
     APS_KEYS = %w{ alert badge sound content-available category }.freeze
 
+    @id_mutex = Mutex.new
+    @id_counter = 0
+
+    def self.generate_id
+      @id_mutex.synchronize do
+        @id_counter += 1
+      end
+    end
+
     # @return [String]
     #         a device token.
     #
@@ -53,6 +62,10 @@ module Lowdown
       !!(@token && @payload)
     end
 
+    def id
+      @id ||= self.class.generate_id
+    end
+
     # Formats the {#id} in the format required by the APN service, which is in groups of 8-4-4-12. It is padded with
     # leading zeroes.
     #
@@ -60,8 +73,8 @@ module Lowdown
     #         the formatted ID.
     #
     def formatted_id
-      if @id
-        padded = @id.to_s.rjust(32, "0")
+      @formatted_id ||= begin
+        padded = id.to_s.rjust(32, "0")
         [padded[0,8], padded[8,4], padded[12,4], padded[16,4], padded[20,12]].join("-")
       end
     end

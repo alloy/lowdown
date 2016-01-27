@@ -1,12 +1,14 @@
 $LOAD_PATH.unshift File.expand_path('../../lib', __FILE__)
 require 'lowdown'
 
+### Minitest
+
 require 'minitest/spec'
 require 'minitest/autorun'
 
-require 'timeout'
 module MiniTest::Assertions
   def assert_eventually_passes(timeout, block)
+    require 'timeout'
     timeout ||= 2
     success = false
     begin
@@ -21,6 +23,25 @@ module MiniTest::Assertions
   end
 end
 Proc.infect_an_assertion :assert_eventually_passes, :must_eventually_pass
+
+
+
+### Celluloid Logging
+
+#$CELLULOID_DEBUG = true
+#Celluloid.logger.level = Logger::DEBUG
+Celluloid.logger.level = Logger::WARN
+
+def silence_logger
+  logger, Celluloid.logger = Celluloid.logger, nil
+  yield
+ensure
+  Celluloid.logger = logger
+end
+
+
+
+### Test Server
 
 class MockAPNS
   class Request < Struct.new(:headers, :body)
@@ -57,54 +78,67 @@ class MockAPNS
 
   def run
     @thread = Thread.new do
-      loop do
-        sock = @ssl.accept
+      begin
+        loop do
+          sock = @ssl.accept
 
-        conn = HTTP2::Server.new
-        conn.on(:frame) do |bytes|
-          sock.write bytes
+          conn = HTTP2::Server.new
+          conn.on(:frame) do |bytes|
+            sock.write bytes
+          end
+
+          conn.on(:stream) do |stream|
+            buffer = ''
+            request = Request.new
+
+            stream.on(:headers) do |h|
+              request.headers = Hash[*h.flatten]
+              if request.headers["test-close-connection"]
+                stream.close
+                sock.close
+              end
+            end
+
+            stream.on(:data) do |d|
+              buffer << d
+            end
+
+            stream.on(:half_close) do
+              request.body = buffer
+              @requests << request
+
+              # APNS only returns a body in case of an error
+              #
+              #response = "Hello HTTP 2.0! POST payload: #{buffer}"
+
+              stream.headers({
+                ":status" => "200",
+                "apns-id" => request.headers["apns-id"],
+                #"content-length" => response.bytesize.to_s,
+                #"content-type" => "application/json",
+              }, end_stream: true)
+
+              #stream.data(response)
+            end
+          end
+
+          while !sock.closed? && !(sock.eof? rescue true)
+            data = sock.readpartial(1024)
+            begin
+              conn << data
+            rescue => e
+              puts "Exception: #{e}, #{e.message} - closing socket."
+              sock.close
+            end
+          end
         end
-
-        conn.on(:stream) do |stream|
-          buffer = ''
-          request = Request.new
-
-          stream.on(:headers) do |h|
-            request.headers = Hash[*h.flatten]
-          end
-
-          stream.on(:data) do |d|
-            buffer << d
-          end
-
-          stream.on(:half_close) do
-            request.body = buffer
-            @requests << request
-
-            # APNS only returns a body in case of an error
-            #
-            #response = "Hello HTTP 2.0! POST payload: #{buffer}"
-
-            stream.headers({
-              ":status" => "200",
-              "apns-id" => request.headers["apns-id"],
-              #"content-length" => response.bytesize.to_s,
-              #"content-type" => "application/json",
-            }, end_stream: true)
-
-            #stream.data(response)
-          end
-        end
-
-        while !sock.closed? && !(sock.eof? rescue true)
-          data = sock.readpartial(1024)
-          begin
-            conn << data
-          rescue => e
-            puts "Exception: #{e}, #{e.message} - closing socket."
-            sock.close
-          end
-        end
+      rescue OpenSSL::SSL::SSLError => e
+        # TODO: This happens every now and then, usually fixed by retrying
+        #$stderr.puts "[!] Test server SSL error, retrying: #{e.inspect}"
+        retry
+      rescue Exception => e
+        $stderr.puts "[!] Test server crashed: #{e.inspect}"
+        raise
       end
     end
 

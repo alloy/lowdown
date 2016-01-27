@@ -1,5 +1,7 @@
+require "lowdown/client/request_group"
 require "lowdown/certificate"
 require "lowdown/connection"
+require "lowdown/connection/monitor"
 require "lowdown/notification"
 
 require "uri"
@@ -7,6 +9,9 @@ require "json"
 
 module Lowdown
   # The main class to use for interactions with the Apple Push Notification HTTP/2 service.
+  #
+  # Important connection configuration options are `pool_size` and `keep_alive`. The former specifies the number of
+  # simultaneous connections the client should make and the latter is key for long running processes.
   #
   class Client
     # The details to connect to the development (sandbox) environment version of the APN service.
@@ -17,25 +22,34 @@ module Lowdown
     #
     PRODUCTION_URI = URI.parse("https://api.push.apple.com:443")
 
+    # The default timeout for {#group}.
+    #
+    DEFAULT_GROUP_TIMEOUT = 3600
+
     # @!group Constructor Summary
 
     # This is the most convenient constructor for regular use.
     #
-    # It then calls {Client.client}.
-    #
     # @param  [Boolean] production
     #         whether to use the production or the development environment.
     #
-    # @param  [Certificate, String] certificate_or_data
+    # @param  [Certificate, String] certificate
     #         a configured Certificate or PEM data to construct a Certificate from.
+    #
+    # @param  [Fixnum] pool_size
+    #         the number of connections to make.
+    #
+    # @param  [Boolean] keep_alive
+    #         when `true` this will make connections, new and restarted, immediately connect to the remote service. Use
+    #         this if you want to keep connections open indefinitely.
     #
     # @raise  [ArgumentError]
     #         raised if the provided Certificate does not support the requested environment.
     #
     # @return (see Client#initialize)
     #
-    def self.production(production, certificate_or_data)
-      certificate = Certificate.certificate(certificate_or_data)
+    def self.production(production, certificate:, pool_size: 1, keep_alive: false)
+      certificate = Certificate.certificate(certificate)
       if production
         unless certificate.production?
           raise ArgumentError, "The specified certificate is not usable with the production environment."
@@ -45,45 +59,54 @@ module Lowdown
           raise ArgumentError, "The specified certificate is not usable with the development environment."
         end
       end
-      client(production ? PRODUCTION_URI : DEVELOPMENT_URI, certificate)
+      client(uri: production ? PRODUCTION_URI : DEVELOPMENT_URI,
+             certificate: certificate,
+             pool_size: pool_size,
+             keep_alive: keep_alive)
     end
 
-    # Creates a connection that connects to the specified `uri`.
-    #
-    # It then calls {Client.client_with_connection}.
+    # Creates a connection pool that connects to the specified `uri`.
     #
     # @param  [URI] uri
     #         the endpoint details of the service to connect to.
     #
-    # @param  [Certificate, String] certificate_or_data
+    # @param  [Certificate, String] certificate
     #         a configured Certificate or PEM data to construct a Certificate from.
+    #
+    # @param  [Fixnum] pool_size
+    #         the number of connections to make.
+    #
+    # @param  [Boolean] keep_alive
+    #         when `true` this will make connections, new and restarted, immediately connect to the remote service. Use
+    #         this if you want to keep connections open indefinitely.
     #
     # @return (see Client#initialize)
     #
-    def self.client(uri, certificate_or_data)
-      certificate = Certificate.certificate(certificate_or_data)
-      client_with_connection(Connection.new(uri, certificate.ssl_context), certificate)
+    def self.client(uri:, certificate:, pool_size: 1, keep_alive: false)
+      certificate = Certificate.certificate(certificate)
+      connection_pool = Connection.pool(size: pool_size, args: [uri, certificate.ssl_context, keep_alive])
+      client_with_connection(connection_pool, certificate: certificate)
     end
 
-    # Creates a Client configured with the `app_bundle_id` as its `default_topic`, in case the Certificate represents a
-    # Universal Certificate.
+    # Creates a Client configured with the `app_bundle_id` as its `default_topic`, in case the Certificate represents
+    # a Universal Certificate.
     #
-    # @param  [Connection] connection
-    #         a Connection configured to connect to the remote service.
+    # @param  [Connection, Celluloid::Supervision::Container::Pool<Connection>] connection
+    #         a single Connection or a pool of Connection actors configured to connect to the remote service.
     #
     # @param  [Certificate] certificate
     #         a configured Certificate.
     #
     # @return (see Client#initialize)
     #
-    def self.client_with_connection(connection, certificate)
-      new(connection, certificate.universal? ? certificate.topics.first : nil)
+    def self.client_with_connection(connection, certificate:)
+      new(connection: connection, default_topic: certificate.universal? ? certificate.topics.first : nil)
     end
 
     # You should normally use any of the other constructors to create a Client object.
     #
-    # @param  [Connection] connection
-    #         a Connection configured to connect to the remote service.
+    # @param  [Connection, Celluloid::Supervision::Container::Pool<Connection>] connection
+    #         a single Connection or a pool of Connection actors configured to connect to the remote service.
     #
     # @param  [String] default_topic
     #         the ‘topic’ to use if the Certificate is a Universal Certificate and a Notification doesn’t explicitely
@@ -92,14 +115,14 @@ module Lowdown
     # @return [Client]
     #         a new instance of Client.
     #
-    def initialize(connection, default_topic = nil)
+    def initialize(connection:, default_topic: nil)
       @connection, @default_topic = connection, default_topic
     end
 
     # @!group Instance Attribute Summary
 
-    # @return [Connection]
-    #         a Connection configured to connect to the remote service.
+    # @return [Connection, Celluloid::Supervision::Container::Pool<Connection>]
+    #         a single Connection or a pool of Connection actors configured to connect to the remote service.
     #
     attr_reader :connection
 
@@ -111,85 +134,147 @@ module Lowdown
 
     # @!group Instance Method Summary
 
-    # Opens the connection to the service. If a block is given the connection is automatically closed.
+    # Opens the connection to the service, yields a request group, and automatically closes the connection by the end of
+    # the block.
     #
-    # @see Connection#open
+    # @note   Don’t use this if you opted to keep a pool of connections alive.
     #
-    # @yield  [client]
-    #         yields `self`.
+    # @see    Connection#connect
+    # @see    Client#group
     #
-    # @return (see Connection#open)
+    # @param  [Numeric] group_timeout
+    #         the maximum amount of time to wait for a request group to halt the caller thread. Defaults to 1 hour.
     #
-    def connect
-      @connection.open
-      if block_given?
+    # @yieldparam (see Client#group)
+    #
+    # @return [void]
+    #
+    def connect(group_timeout: nil, &block)
+      if @connection.respond_to?(:actors)
+        @connection.actors.each { |connection| connection.async.connect }
+      else
+        @connection.async.connect
+      end
+      if block
         begin
-          yield self
+          group(timeout: group_timeout, &block)
         ensure
-          close
+          disconnect
         end
       end
     end
 
-    # Flushes the connection.
+    # Closes the connection to the service.
     #
-    # @see Connection#flush
+    # @see    Connection#disconnect
     #
-    # @return (see Connection#flush)
+    # @return [void]
     #
-    def flush
-      @connection.flush
+    def disconnect
+      @connection.disconnect
+    rescue Celluloid::DeadActorError
+      # Rescue this exception instead of calling #alive? as that only works on an actor, not a pool.
     end
 
-    # Closes the connection.
+    # Use this to group a batch of requests and halt the caller thread until all of the requests in the group have been
+    # performed.
     #
-    # @see Connection#close
+    # It proxies {RequestGroup#send_notification} to {Client#send_notification}, but, unlike the latter, the request
+    # callbacks are provided in the form of a block.
     #
-    # @return (see Connection#close)
+    # @note   Do **not** share the yielded group across threads.
     #
-    def close
-      @connection.close
+    # @see    RequestGroup#send_notification
+    # @see    Connection::Monitor
+    #
+    # @param  [Numeric] timeout
+    #         the maximum amount of time to wait for a request group to halt the caller thread. Defaults to 1 hour.
+    #
+    # @yieldparam [RequestGroup] group
+    #         the request group object.
+    #
+    # @raise  [Exception]
+    #         if a connection in the pool has died during the execution of this group, the reason for its death will be
+    #         raised.
+    #
+    # @return [void]
+    #
+    def group(timeout: nil)
+      group = nil
+      monitor do |condition|
+        group = RequestGroup.new(self, condition)
+        yield group
+        if !group.empty? && exception = condition.wait(timeout || DEFAULT_GROUP_TIMEOUT)
+          raise exception
+        end
+      end
+    ensure
+      group.terminate
     end
 
-    # Verifies the `notification` is valid and sends it to the remote service.
+    # Registers a condition object with the connection pool, for the duration of the given block. It either returns an
+    # exception that caused a connection to die, or whatever value you signal to it.
     #
-    # @see Connection#post
+    # This is automatically used by {#group}.
     #
-    # @note (see Connection#post)
+    # @yieldparam [Connection::Monitor::Condition] condition
+    #         the monitor condition object.
+    #
+    # @return [void]
+    #
+    def monitor
+      condition = Connection::Monitor::Condition.new
+      if defined?(Mock::Connection) && @connection.class == Mock::Connection
+        yield condition
+      else
+        begin
+          @connection.__register_lowdown_crash_condition__(condition)
+          yield condition
+        ensure
+          @connection.__deregister_lowdown_crash_condition__(condition)
+        end
+      end
+    end
+
+    # Verifies the `notification` is valid and then sends it to the remote service. Response feedback is provided via
+    # a delegate mechanism.
+    #
+    # @note   In general, you will probably want to use {#group} to be able to use {RequestGroup#send_notification},
+    #         which takes a traditional blocks-based callback approach.
+    #
+    # @see    Connection#post
     #
     # @param  [Notification] notification
     #         the notification object whose data to send to the service.
     #
-    # @yield  [response, notification]
-    #         called when the request is finished and a response is available.
+    # @param  [Connection::DelegateProtocol] delegate
+    #         an object that implements the connection delegate protocol.
     #
-    # @yieldparam [Response] response
-    #         the Response that holds the status data that came back from the service.
-    #
-    # @yieldparam [Notification] notification
-    #         the originally passed in notification object.
+    # @param  [Object, nil] context
+    #         any object that you want to be passed to the delegate once the response is back.
     #
     # @raise  [ArgumentError]
     #         raised if the Notification is not {Notification#valid?}.
     #
     # @return [void]
     #
-    def send_notification(notification, &callback)
+    def send_notification(notification, delegate:, context: nil)
       raise ArgumentError, "Invalid notification: #{notification.inspect}" unless notification.valid?
 
       topic = notification.topic || @default_topic
       headers = {}
       headers["apns-expiration"] = (notification.expiration || 0).to_i
-      headers["apns-id"]         = notification.formatted_id if notification.id
+      headers["apns-id"]         = notification.formatted_id
       headers["apns-priority"]   = notification.priority     if notification.priority
       headers["apns-topic"]      = topic                     if topic
 
       body = notification.formatted_payload.to_json
 
-      # No need to keep a strong reference to the notification object, unless the user really wants it.
-      actual_callback = callback.arity < 2 ? callback : lambda { |response| callback.call(response, notification) }
-
-      @connection.post("/3/device/#{notification.token}", headers, body, &actual_callback)
+      @connection.async.post(path: "/3/device/#{notification.token}",
+                             headers: headers,
+                             body: body,
+                             delegate: delegate,
+                             context: context)
     end
   end
 end

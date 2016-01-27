@@ -49,22 +49,6 @@ module Lowdown
         @response.activity_last_checked_at.to_i.must_equal @timestamp.to_i
       end
     end
-
-    describe "#unformatted_id" do
-      parallelize_me!
-
-      it "unformats the ID, but always as string" do
-        [42, "5682d0d35a9416d877000000"].each do |id|
-          formatted_id = Notification.new(:id => id).formatted_id
-          Response.new("apns-id" => formatted_id).unformatted_id.must_equal id.to_s
-        end
-      end
-
-      it "takes an optional expected ID length" do
-        formatted_id = Notification.new(:id => 42).formatted_id
-        Response.new("apns-id" => formatted_id).unformatted_id(4).must_equal "0042"
-      end
-    end
   end
 end
 
