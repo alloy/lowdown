@@ -6,7 +6,7 @@ module Lowdown
   #
   class Notification
     # @!visibility private
-    APS_KEYS = %w{ alert badge sound content-available category }.freeze
+    APS_KEYS = %w( alert badge sound content-available category ).freeze
 
     @id_mutex = Mutex.new
     @id_counter = 0
@@ -75,7 +75,7 @@ module Lowdown
     def formatted_id
       @formatted_id ||= begin
         padded = id.to_s.rjust(32, "0")
-        [padded[0,8], padded[8,4], padded[12,4], padded[16,4], padded[20,12]].join("-")
+        [padded[0, 8], padded[8, 4], padded[12, 4], padded[16, 4], padded[20, 12]].join("-")
       end
     end
 
@@ -88,7 +88,7 @@ module Lowdown
     #         the payload organized according to the APN specification.
     #
     def formatted_payload
-      if @payload.has_key?("aps")
+      if @payload.key?("aps")
         @payload
       else
         payload = {}
@@ -107,3 +107,4 @@ module Lowdown
     end
   end
 end
+

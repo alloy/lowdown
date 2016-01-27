@@ -1,25 +1,27 @@
-$LOAD_PATH.unshift File.expand_path('../../lib', __FILE__)
-require 'lowdown'
+$LOAD_PATH.unshift File.expand_path("../../lib", __FILE__)
+require "lowdown"
 
 ### Minitest
 
-require 'minitest/spec'
-require 'minitest/autorun'
+require "minitest/spec"
+require "minitest/autorun"
 
-module MiniTest::Assertions
-  def assert_eventually_passes(timeout, block)
-    require 'timeout'
-    timeout ||= 2
-    success = false
-    begin
-      Timeout.timeout(timeout) do
-        sleep 0.1 until block.call
-        success = true
-      end
-    rescue Timeout::Error
+module MiniTest
+  module Assertions
+    def assert_eventually_passes(timeout, block)
+      require "timeout"
+      timeout ||= 2
       success = false
+      begin
+        Timeout.timeout(timeout) do
+          sleep 0.1 until block.call
+          success = true
+        end
+      rescue Timeout::Error
+        success = false
+      end
+      assert success, "Block did return `true` before timeout (#{timeout} sec) was reached."
     end
-    assert success, "Block did return `true` before timeout (#{timeout} sec) was reached."
   end
 end
 Proc.infect_an_assertion :assert_eventually_passes, :must_eventually_pass
@@ -28,8 +30,8 @@ Proc.infect_an_assertion :assert_eventually_passes, :must_eventually_pass
 
 ### Celluloid Logging
 
-#$CELLULOID_DEBUG = true
-#Celluloid.logger.level = Logger::DEBUG
+# $CELLULOID_DEBUG = true
+# Celluloid.logger.level = Logger::DEBUG
 Celluloid.logger.level = Logger::WARN
 
 def silence_logger
@@ -58,8 +60,8 @@ class MockAPNS
 
     require "lowdown/mock"
     @context = Lowdown::Mock.certificate("com.example.MockAPNS").ssl_context
-    # TODO figure out how to make the cert cerification work.
-    #@context.verify_mode = OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
+    # TODO: figure out how to make the cert cerification work.
+    # @context.verify_mode = OpenSSL::SSL::VERIFY_PEER | OpenSSL::SSL::VERIFY_FAIL_IF_NO_PEER_CERT
 
     @ssl = OpenSSL::SSL::SSLServer.new(TCPServer.new(0), @context)
   end
@@ -88,7 +90,7 @@ class MockAPNS
           end
 
           conn.on(:stream) do |stream|
-            buffer = ''
+            buffer = ""
             request = Request.new
 
             stream.on(:headers) do |h|
@@ -109,20 +111,22 @@ class MockAPNS
 
               # APNS only returns a body in case of an error
               #
-              #response = "Hello HTTP 2.0! POST payload: #{buffer}"
+              # response = "Hello HTTP 2.0! POST payload: #{buffer}"
 
               stream.headers({
                 ":status" => "200",
                 "apns-id" => request.headers["apns-id"],
-                #"content-length" => response.bytesize.to_s,
-                #"content-type" => "application/json",
+                # "content-length" => response.bytesize.to_s,
+                # "content-type" => "application/json",
               }, end_stream: true)
 
-              #stream.data(response)
+              # stream.data(response)
             end
           end
 
+          # rubocop:disable Style/RescueModifier
           while !sock.closed? && !(sock.eof? rescue true)
+            # rubocop:enable Style/RescueModifier
             data = sock.readpartial(1024)
             begin
               conn << data
@@ -134,7 +138,7 @@ class MockAPNS
         end
       rescue OpenSSL::SSL::SSLError => e
         # TODO: This happens every now and then, usually fixed by retrying
-        #$stderr.puts "[!] Test server SSL error, retrying: #{e.inspect}"
+        # $stderr.puts "[!] Test server SSL error, retrying: #{e.inspect}"
         retry
       rescue Exception => e
         $stderr.puts "[!] Test server crashed: #{e.inspect}"

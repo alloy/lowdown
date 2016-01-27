@@ -100,7 +100,7 @@ module Lowdown
             :token => File.basename(request.path),
             :id => request.response.id,
             :payload => JSON.parse(request.body),
-            :topic => headers["apns-topic"]
+            :topic => headers["apns-topic"],
           }
           hash[:expiration] = Time.at(headers["apns-expiration"].to_i) if headers["apns-expiration"]
           hash[:priority] = headers["apns-priority"].to_i if headers["apns-priority"]
@@ -173,3 +173,4 @@ module Lowdown
     end
   end
 end
+

@@ -13,34 +13,38 @@ require "celluloid/io"
 if HTTP2::VERSION == "0.8.0"
   # @!visibility private
   #
-  # This monkey-patch ensures that we send the HTTP/2 connection preface before anything else.
-  #
-  # @see https://github.com/igrigorik/http-2/pull/44
-  #
-  class HTTP2::Client
-    def connection_management(frame)
-      if @state == :waiting_connection_preface
-        send_connection_preface
-        connection_settings(frame)
-      else
-        super(frame)
+  module HTTP2
+    # @!visibility private
+    #
+    # This monkey-patch ensures that we send the HTTP/2 connection preface before anything else.
+    #
+    # @see https://github.com/igrigorik/http-2/pull/44
+    #
+    class Client
+      def connection_management(frame)
+        if @state == :waiting_connection_preface
+          send_connection_preface
+          connection_settings(frame)
+        else
+          super(frame)
+        end
       end
     end
-  end
 
-  # @!visibility private
-  #
-  # These monkey-patches ensure that data added to a buffer has a binary encoding, as to not lead to encoding clashes.
-  #
-  # @see https://github.com/igrigorik/http-2/pull/46
-  #
-  class HTTP2::Buffer
-    def <<(x)
-      super(x.force_encoding(Encoding::BINARY))
-    end
+    # @!visibility private
+    #
+    # These monkey-patches ensure that data added to a buffer has a binary encoding, as to not lead to encoding clashes.
+    #
+    # @see https://github.com/igrigorik/http-2/pull/46
+    #
+    class Buffer
+      def <<(x)
+        super(x.force_encoding(Encoding::BINARY))
+      end
 
-    def prepend(x)
-      super(x.force_encoding(Encoding::BINARY))
+      def prepend(x)
+        super(x.force_encoding(Encoding::BINARY))
+      end
     end
   end
 end
@@ -294,7 +298,7 @@ module Lowdown
     # @return [void]
     #
     def post(path:, headers:, body:, delegate:, context: nil)
-      request('POST', path, headers, body, delegate, context)
+      request("POST", path, headers, body, delegate, context)
     end
 
     private
@@ -341,7 +345,7 @@ module Lowdown
 
       stream.on(:data) do |data|
         debug "[#{apns_id}] Got response data: #{data}"
-        response.raw_body ||= ''
+        response.raw_body ||= ""
         response.raw_body << data
       end
 
@@ -356,3 +360,4 @@ module Lowdown
     end
   end
 end
+

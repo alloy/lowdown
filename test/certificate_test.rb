@@ -55,12 +55,12 @@ module Lowdown
       parallelize_me!
 
       before do
-        value = %w{
+        value = %w(
           0d
           com.example.MockAPNS0...app
           com.example.MockAPNS.voip0...voip
           com.example.MockAPNS.complication0...complication
-        }.join("..")
+        ).join("..")
         @cert.extensions = [OpenSSL::X509::Extension.new(Certificate::UNIVERSAL_CERTIFICATE_EXTENSION, value)]
       end
 
@@ -69,8 +69,13 @@ module Lowdown
       end
 
       it "returns all the available topics" do
-        @certificate.topics.must_equal %w{ com.example.MockAPNS com.example.MockAPNS.voip com.example.MockAPNS.complication }
+        @certificate.topics.must_equal %w(
+          com.example.MockAPNS
+          com.example.MockAPNS.voip
+          com.example.MockAPNS.complication
+        )
       end
     end
   end
 end
+

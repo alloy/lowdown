@@ -118,7 +118,7 @@ module Lowdown
     #         the App ID / app’s Bundle ID that this certificate is for.
     #
     def app_bundle_id
-      @certificate.subject.to_a.find { |key, *_| key == 'UID' }[1]
+      @certificate.subject.to_a.find { |key, *_| key == "UID" }[1]
     end
 
     private
@@ -133,3 +133,4 @@ module Lowdown
     end
   end
 end
+

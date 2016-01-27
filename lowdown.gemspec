@@ -1,7 +1,7 @@
 # coding: utf-8
-lib = File.expand_path('../lib', __FILE__)
+lib = File.expand_path("../lib", __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
-require 'lowdown/version'
+require "lowdown/version"
 
 Gem::Specification.new do |spec|
   spec.name          = "lowdown"
@@ -19,7 +19,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   # This is currently set to >= 2.0.0 in the http-2 gemspec, which is incorrect, as it uses required keyword arguments.
-  spec.required_ruby_version = '>= 2.1.1'
+  spec.required_ruby_version = ">= 2.1.1"
 
   spec.add_runtime_dependency "http-2", ">= 0.8"
   spec.add_runtime_dependency "celluloid-io", ">= 0.17"
@@ -28,3 +28,4 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rake", "~> 10.0"
   spec.add_development_dependency "minitest", "~> 5.0"
 end
+

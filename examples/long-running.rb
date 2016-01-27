@@ -4,13 +4,13 @@ require "logger"
 
 cert_file, environment, device_token = ARGV.first(3)
 unless cert_file && environment && device_token
-  puts "Usage: #{$0} path/to/cert.pem [production|development] device-token"
+  puts "Usage: {$PROGRAM_NAME} path/to/cert.pem [production|development] device-token"
   exit 1
 end
 
-#$CELLULOID_DEBUG = true
-#Celluloid.logger.level = Logger::DEBUG
-#Celluloid.logger.level = Logger::INFO
+# $CELLULOID_DEBUG = true
+# Celluloid.logger.level = Logger::DEBUG
+# Celluloid.logger.level = Logger::INFO
 Celluloid.logger.level = Logger::ERROR
 
 logger = Logger.new(STDOUT)

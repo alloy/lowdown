@@ -3,22 +3,24 @@ require "lowdown"
 
 cert_file, environment, device_token = ARGV.first(3)
 unless cert_file && environment && device_token
-  puts "Usage: #{$0} path/to/cert.pem [production|development] device-token"
+  puts "Usage: {$PROGRAM_NAME} path/to/cert.pem [production|development] device-token"
   exit 1
 end
 
-#$CELLULOID_DEBUG = true
-#Celluloid.logger.level = Logger::DEBUG
-#Celluloid.logger.level = Logger::INFO
+production = environment == "production"
+
+# $CELLULOID_DEBUG = true
+# Celluloid.logger.level = Logger::DEBUG
+# Celluloid.logger.level = Logger::INFO
 Celluloid.logger.level = Logger::ERROR
 
 # Connection time can take a while, just count the time it takes to connect.
 start = nil
 
 # The block form of Client#connect flushes and closes the connection at the end of the block.
-Lowdown::Client.production(environment == "production", certificate: File.read(cert_file), pool_size: 3).connect do |group|
+Lowdown::Client.production(production, certificate: File.read(cert_file), pool_size: 3).connect do |group|
   start = Time.now
-  601.times do |i|
+  601.times do
     notification = Lowdown::Notification.new(:token => device_token)
     notification.payload = { :alert => "Hello HTTP/2! ID=#{notification.id}" }
     group.send_notification(notification) do |response|

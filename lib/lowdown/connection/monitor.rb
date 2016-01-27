@@ -77,3 +77,4 @@ module Lowdown
     Celluloid::Supervision::Container::Pool.send(:prepend, Monitor)
   end
 end
+

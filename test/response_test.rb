@@ -27,7 +27,7 @@ module Lowdown
       Response.new(":status" => "200").invalid_token?.must_equal false
       Response.new({ ":status" => "400" }, { "reason" => "BadCertificate" }.to_json).invalid_token?.must_equal false
 
-      [["410", "Unregistered"], ["400", "BadDeviceToken"], ["400", "DeviceTokenNotForTopic"]].each do |status, reason|
+      [%w(410 Unregistered), %w(400 BadDeviceToken), %w(400 DeviceTokenNotForTopic)].each do |status, reason|
         Response.new({ ":status" => status }, { "reason" => reason }.to_json).invalid_token?.must_equal true
       end
     end

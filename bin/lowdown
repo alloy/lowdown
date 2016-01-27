@@ -13,12 +13,13 @@ options = { :payload => {}, :custom_data => {}, :pool_size => 1 }
 OPTION_PARSER = OptionParser.new do |opts|
   opts.banner = "Usage: lowdown [options] <tokens …>"
 
-  opts.on("-v", "--version", "Print version") do |v|
+  opts.on("-v", "--version", "Print version") do
     puts VERSION
     exit
   end
 
-  opts.on("-m", "--alert ALERT", "Body of the alert to send in the push notification (the %d format code will be replaced by the notification ID)") do |alert|
+  opts.on("-m", "--alert ALERT", "Body of the alert to send in the push notification (the %d format code will be " \
+                                 "replaced by the notification ID)") do |alert|
     options[:alert] = alert
   end
 
@@ -39,7 +40,8 @@ OPTION_PARSER = OptionParser.new do |opts|
     options[:custom_data][key] = value
   end
 
-  opts.on("-P", "--payload PAYLOAD", "JSON payload for notifications, merged with --alert, --badge, --sound, and --data") do |payload|
+  opts.on("-P", "--payload PAYLOAD", "JSON payload for notifications, merged with --alert, --badge, --sound, and " \
+                                     "--data") do |payload|
     options[:payload] = JSON.parse(payload)
   end
 
@@ -47,7 +49,8 @@ OPTION_PARSER = OptionParser.new do |opts|
     options[:topic] = topic
   end
 
-  opts.on("-e", "--environment ENV", "Environment to send push notification (production or development), defaults to production if the certificate supports that or otherwise development") do |env|
+  opts.on("-e", "--environment ENV", "Environment to send push notification (production or development), defaults to " \
+                                     "production if the certificate supports that or otherwise development") do |env|
     options[:env] = env
   end
 
@@ -85,13 +88,15 @@ end
 
 certificate = nil
 file, passphrase = options.values_at(:certificate_file, :certificate_passphrase)
+# rubocop:disable Style/RescueModifier
 unless file && File.exist?(file) && certificate = (Certificate.from_pem_data(File.read(file), passphrase) rescue nil)
+  # rubocop:enable Style/RescueModifier
   help! "A valid certificate path is required."
 end
 
 production = false
 if options[:env]
-  unless %w{ production development }.include?(options[:env])
+  unless %w( production development ).include?(options[:env])
     help! "Invalid environment specified."
   end
   production = options[:env] == "production"
@@ -114,14 +119,10 @@ payload.merge!(options[:custom_data])
 payload["alert"] = options[:alert] if options[:alert]
 payload["badge"] = options[:badge] if options[:badge]
 payload["sound"] = options[:sound] if options[:sound]
-payload["content-available"] = options[:content_available] ? 1 : 0 if options.has_key?(:content_available)
-if payload.empty?
-  help! "No payload data specified."
-end
+payload["content-available"] = options[:content_available] ? 1 : 0 if options.key?(:content_available)
 
-if tokens.empty?
-  help! "No device tokens specified."
-end
+help! "No payload data specified." if payload.empty?
+help! "No device tokens specified." if tokens.empty?
 
 notifications = tokens.map do |token|
   Notification.new(:token => token, :payload => payload.dup, :topic => options[:topic]).tap do |notification|

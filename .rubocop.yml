@@ -1,0 +1,121 @@
+AllCops:
+  TargetRubyVersion: 2.1
+
+Documentation:
+  Enabled: false
+
+# They are idiomatic
+Lint/AssignmentInCondition:
+  Enabled: false
+
+Lint/RescueException:
+  Enabled: false
+
+Lint/StringConversionInInterpolation:
+  Enabled: false
+
+Lint/UselessAssignment:
+  Enabled: false
+
+Lint/UnusedMethodArgument:
+  Enabled: false
+
+Lint/HandleExceptions:
+  Enabled: false
+
+Metrics/LineLength:
+  Max: 120
+  AllowURI: true
+  URISchemes:
+    - http
+    - https
+
+# Arbitrary max lengths for classes simply do not work and enabling this will
+# lead to a never ending stream of annoyance and changes.
+Metrics/ClassLength:
+  Enabled: false
+
+# Arbitrary max lengths for modules simply do not work and enabling this will
+# lead to a never ending stream of annoyance and changes.
+Metrics/ModuleLength:
+  Enabled: false
+
+# Arbitrary max lengths for methods simply do not work and enabling this will
+# lead to a never ending stream of annoyance and changes.
+Metrics/MethodLength:
+  Enabled: false
+
+# No enforced convention here.
+Metrics/BlockNesting:
+  Enabled: false
+
+# It will be obvious which code is complex, Rubocop should only lint simple
+# rules for us.
+Metrics/AbcSize:
+  Enabled: false
+
+# It will be obvious which code is complex, Rubocop should only lint simple
+# rules for us.
+Metrics/CyclomaticComplexity:
+  Enabled: false
+
+# It will be obvious which code is complex, Rubocop should only lint simple
+# rules for us.
+Metrics/PerceivedComplexity:
+  Enabled: false
+
+Metrics/ParameterLists:
+  Enabled: false
+
+Style/GuardClause:
+  Enabled: false
+
+Style/Alias:
+  EnforcedStyle: prefer_alias_method
+
+Style/AsciiComments:
+  Enabled: false
+
+Style/SignalException:
+  EnforcedStyle: only_raise
+
+Style/DoubleNegation:
+  Enabled: false
+
+Style/EmptyLines:
+  Exclude:
+    - 'test/test_helper.rb'
+
+Style/FileName:
+  Exclude:
+    - 'examples/*.rb'
+
+Style/GlobalVars:
+  Enabled: false
+
+# Should have `EnforcedStyle: hash_rockets`, because that’s the only consistent style,
+# but that incorrectly flags keyword arguments as well.
+Style/HashSyntax:
+  Enabled: false
+
+Style/IfInsideElse:
+  Enabled: false
+
+Style/IndentHash:
+  Enabled: false
+
+Style/ParallelAssignment:
+  Enabled: false
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Style/StructInheritance:
+  Enabled: false
+
+Style/TrailingBlankLines:
+  EnforcedStyle: final_blank_line
+
+Style/TrailingCommaInLiteral:
+  EnforcedStyleForMultiline: comma
+

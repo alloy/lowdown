@@ -29,14 +29,14 @@ module Lowdown
 
     it "immediately connects by default" do
       @connection = Connection.new(server.uri, @ssl_context)
-      lambda { @connection.connected? }.must_eventually_pass
+      -> { @connection.connected? }.must_eventually_pass
     end
 
     it "does not try to double connect when calling connect after already connecting at initialization" do
       @connection = Connection.new(server.uri, @ssl_context, true)
       @connection.connect
       @connection.connect
-      lambda { @connection.connected? }.must_eventually_pass
+      -> { @connection.connected? }.must_eventually_pass
     end
 
     describe "with a connection" do
@@ -69,15 +69,21 @@ module Lowdown
       describe "concerning the connection life-cycle" do
         it "raises if the service closes the connection" do
           silence_logger do
-            @connection.async.post(path: "/3/device/some-device-token", headers: { "test-close-connection" => "true" }, body: "♥", delegate: @delegate)
-            lambda { !@connection.alive? }.must_eventually_pass
+            @connection.async.post(path: "/3/device/some-device-token",
+                                   headers: { "test-close-connection" => "true" },
+                                   body: "♥",
+                                   delegate: @delegate)
+            -> { !@connection.alive? }.must_eventually_pass
           end
         end
       end
 
       describe "when making a request" do
         before do
-          @connection.async.post(path: "/3/device/some-device-token", headers: { "apns-id" => 42 }, body: "♥", delegate: @delegate)
+          @connection.async.post(path: "/3/device/some-device-token",
+                                 headers: { "apns-id" => 42 },
+                                 body: "♥",
+                                 delegate: @delegate)
           @response = @delegate.condition.wait
           @request = server.requests.last
         end
@@ -110,3 +116,4 @@ module Lowdown
     end
   end
 end
+

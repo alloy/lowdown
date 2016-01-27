@@ -27,3 +27,4 @@ require "lowdown/version"
 #
 module Lowdown
 end
+

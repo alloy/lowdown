@@ -14,13 +14,15 @@ module Lowdown
       end
 
       it "configures a connection to the production environment" do
-        @certificate.certificate.extensions = [OpenSSL::X509::Extension.new(Certificate::PRODUCTION_ENV_EXTENSION, "..")]
+        ext = OpenSSL::X509::Extension.new(Certificate::PRODUCTION_ENV_EXTENSION, "..")
+        @certificate.certificate.extensions = [ext]
         client = Client.production(true, certificate: @certificate)
         client.connection.uri.must_equal Client::PRODUCTION_URI
       end
 
       it "configures a connection to the development environment" do
-        @certificate.certificate.extensions = [OpenSSL::X509::Extension.new(Certificate::DEVELOPMENT_ENV_EXTENSION, "..")]
+        ext = OpenSSL::X509::Extension.new(Certificate::DEVELOPMENT_ENV_EXTENSION, "..")
+        @certificate.certificate.extensions = [ext]
         client = Client.production(false, certificate: @certificate)
         client.connection.uri.must_equal Client::DEVELOPMENT_URI
       end
@@ -74,7 +76,10 @@ module Lowdown
         lambda do
           Timeout.timeout(5) do
             @client.group do |group|
-              @client.connection.post(path: "/3/device/some-device-token", headers: { "test-close-connection" => "true" }, body: "♥", delegate: group.callbacks)
+              @client.connection.post(path: "/3/device/some-device-token",
+                                      headers: { "test-close-connection" => "true" },
+                                      body: "♥",
+                                      delegate: group.callbacks)
             end
           end
         end.must_raise EOFError
@@ -164,10 +169,11 @@ module Lowdown
           end
 
           it "omits the apns-priority header" do
-            @request.headers.has_key?("apns-priority").must_equal false
+            @request.headers.key?("apns-priority").must_equal false
           end
         end
       end
     end
   end
 end
+
