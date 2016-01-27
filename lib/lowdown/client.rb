@@ -142,6 +142,9 @@ module Lowdown
     # @see    Connection#connect
     # @see    Client#group
     #
+    # @param  [Numeric] group_timeout
+    #         the maximum amount of time to wait for a request group to halt the caller thread. Defaults to 1 hour.
+    #
     # @yieldparam (see Client#group)
     #
     # @return [void]
@@ -179,14 +182,20 @@ module Lowdown
     # It proxies {RequestGroup#send_notification} to {Client#send_notification}, but, unlike the latter, the request
     # callbacks are provided in the form of a block.
     #
-    # @note   Do **not** share the yielded group across threads. For the duration of the block, In the connection will
-    #         be monitored for exceptions and, if any, raise them on the calling thread.
+    # @note   Do **not** share the yielded group across threads.
     #
     # @see    RequestGroup#send_notification
     # @see    Connection::Monitor
     #
+    # @param  [Numeric] timeout
+    #         the maximum amount of time to wait for a request group to halt the caller thread. Defaults to 1 hour.
+    #
     # @yieldparam [RequestGroup] group
     #         the request group object.
+    #
+    # @raise  [Exception]
+    #         if a connection in the pool has died during the execution of this group, the reason for its death will be
+    #         raised.
     #
     # @return [void]
     #
@@ -203,11 +212,13 @@ module Lowdown
       group.terminate
     end
 
-    # Creates a {Connection::Monitor} and monitors the connection for the duration of the given block. Exceptions that
-    # occur on the connection, or connections in the pool, will be raised on the caller thread. Thus you should halt the
-    # caller thread while waiting for your work to finish.
+    # Registers a condition object with the connection pool, for the duration of the given block. It either returns an
+    # exception that caused a connection to die, or whatever value you signal to it.
     #
     # This is automatically used by {#group}.
+    #
+    # @yieldparam [Connection::Monitor::Condition] condition
+    #         the monitor condition object.
     #
     # @return [void]
     #
