@@ -51,6 +51,10 @@ module Lowdown
   # It manages both the SSL connection and processing of the HTTP/2 data sent back and forth over that connection.
   #
   class Connection
+    MAX_CONNECT_RETRIES = 5
+    CONNECT_RETRY_BACKOFF = 5
+    CONNECT_TIMEOUT = 10
+
     include Celluloid::IO
     include Celluloid::Internals::Logger
     finalizer :disconnect
@@ -118,15 +122,27 @@ module Lowdown
 
     private
 
-    def connect!
+    def connect!(tries = 0)
       return if @connection
       @connecting = true
 
       info "Opening APNS connection."
 
-      @connection = SSLSocket.new(TCPSocket.new(@uri.host, @uri.port), @ssl_context)
-      @connection.sync_close = true
-      @connection.connect
+      # Celluloid::IO::DNSResolver bug. In case there is no connection at all:
+      # 1. This results in `nil`:
+      #    https://github.com/celluloid/celluloid-io/blob/85cee9da22ef5e94ba0abfd46454a2d56572aff4/lib/celluloid/io/dns_resolver.rb#L32
+      # 2. This tries to `NilClass#send` the hostname:
+      #    https://github.com/celluloid/celluloid-io/blob/85cee9da22ef5e94ba0abfd46454a2d56572aff4/lib/celluloid/io/dns_resolver.rb#L44
+      begin
+        socket = TCPSocket.new(@uri.host, @uri.port)
+      rescue NoMethodError
+        raise SocketError, "(Probably) getaddrinfo: nodename nor servname provided, or not known"
+      end
+
+      @connection = SSLSocket.new(socket, @ssl_context)
+      timeout(CONNECT_TIMEOUT) do
+        @connection.connect
+      end
 
       @http = HTTP2::Client.new
       @http.on(:frame) do |bytes|
@@ -135,6 +151,24 @@ module Lowdown
       end
 
       async.runloop
+
+    rescue Celluloid::TaskTerminated, Celluloid::DeadActorError
+      # These are legit, let them bubble up.
+      raise
+    rescue Exception => e
+      # The main reason to do connect retries ourselves, instead of letting it up a supervisor/pool, is because a pool
+      # goes into a bad state if a connection crashes on initialization.
+      @connection.close if @connection && !@connection.closed?
+      @connection = @http = nil
+      if tries < MAX_CONNECT_RETRIES
+        tries += 1
+        delay = tries * CONNECT_RETRY_BACKOFF
+        error("#{e.class}: #{e.message} - retrying in #{delay} seconds (#{tries}/#{MAX_CONNECT_RETRIES})")
+        after(delay) { async.connect!(tries) }
+        return
+      else
+        raise
+      end
     end
 
     def reset_state!
