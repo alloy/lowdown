@@ -8,7 +8,8 @@ module Lowdown
       @client = Client.new(connection: @connection, default_topic: "com.example.MockAPNS")
       @client.connect
 
-      @group = Client::RequestGroup.new(@client)
+      @condition = Connection::Monitor::Condition.new
+      @group = Client::RequestGroup.new(@client, @condition)
 
       @notification = Notification.new(
         :payload => { :alert => "Push it real good.", :url => "http://example/custom-attribute" },
@@ -24,17 +25,13 @@ module Lowdown
       @group.terminate
     end
 
-    it "does not halt when flushing an empty group" do
-      Timeout.timeout(1) { @group.flush } # Should not raise
-    end
-
     it "performs the callback" do
       performed = false
       @group.send_notification(@notification) do
         sleep 0.1 # test that flush works
         performed = true
       end
-      @group.flush
+      @condition.wait(1)
       performed.must_equal true
     end
 
@@ -43,7 +40,7 @@ module Lowdown
       @group.send_notification(@notification) do
         thread = Thread.current
       end
-      @group.flush
+      @condition.wait(1)
       thread.wont_equal nil
       thread.wont_equal Thread.current
     end
@@ -54,7 +51,7 @@ module Lowdown
         yielded_response = response
         yielded_context = context
       end
-      @group.flush
+      @condition.wait(1)
       yielded_response.id.end_with?("42").must_equal true
       yielded_context.must_equal :ok
     end

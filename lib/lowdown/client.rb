@@ -22,6 +22,10 @@ module Lowdown
     #
     PRODUCTION_URI = URI.parse("https://api.push.apple.com:443")
 
+    # The default timeout for {#group}.
+    #
+    DEFAULT_GROUP_TIMEOUT = 3600
+
     # @!group Constructor Summary
 
     # This is the most convenient constructor for regular use.
@@ -142,7 +146,7 @@ module Lowdown
     #
     # @return [void]
     #
-    def connect(&block)
+    def connect(group_timeout: nil, &block)
       if @connection.respond_to?(:actors)
         @connection.actors.each { |connection| connection.async.connect }
       else
@@ -150,7 +154,7 @@ module Lowdown
       end
       if block
         begin
-          group(&block)
+          group(timeout: group_timeout, &block)
         ensure
           disconnect
         end
@@ -186,11 +190,14 @@ module Lowdown
     #
     # @return [void]
     #
-    def group
-      group = RequestGroup.new(self)
-      monitor do
+    def group(timeout: nil)
+      group = nil
+      monitor do |condition|
+        group = RequestGroup.new(self, condition)
         yield group
-        group.flush
+        if !group.empty? && exception = condition.wait(timeout || DEFAULT_GROUP_TIMEOUT)
+          raise exception
+        end
       end
     ensure
       group.terminate
@@ -205,10 +212,17 @@ module Lowdown
     # @return [void]
     #
     def monitor
-      monitor = Connection::Monitor.monitor(@connection) if @connection.is_a?(Celluloid) # Ignore mock connections.
-      yield
-    ensure
-      monitor.terminate if monitor
+      condition = Connection::Monitor::Condition.new
+      if defined?(Mock::Connection) && @connection.class == Mock::Connection
+        yield condition
+      else
+        begin
+          @connection.__register_lowdown_crash_condition__(condition)
+          yield condition
+        ensure
+          @connection.__deregister_lowdown_crash_condition__(condition)
+        end
+      end
     end
 
     # Verifies the `notification` is valid and then sends it to the remote service. Response feedback is provided via

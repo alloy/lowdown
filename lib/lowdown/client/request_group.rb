@@ -9,9 +9,9 @@ module Lowdown
     class RequestGroup
       attr_reader :callbacks
 
-      def initialize(client)
+      def initialize(client, condition)
         @client = client
-        @callbacks = Callbacks.new
+        @callbacks = Callbacks.new(condition)
       end
 
       def send_notification(notification, context: nil, &callback)
@@ -20,32 +20,24 @@ module Lowdown
         @client.send_notification(notification, delegate: @callbacks.async, context: context)
       end
 
+      def empty?
+        @callbacks.empty?
+      end
+
       def terminate
         @callbacks.terminate if @callbacks.alive?
       end
 
-      def flush
-        # Don’t block if all notifications are already delivered.
-        @callbacks.condition.wait unless @callbacks.empty?
-      end
-
       class Callbacks
         include Celluloid
-        finalizer :finished
 
-        attr_reader :condition
-
-        def initialize
+        def initialize(condition)
           @callbacks = {}
-          @condition = Celluloid::Condition.new
+          @condition = condition
         end
 
         def empty?
           @callbacks.empty?
-        end
-
-        def finished
-          @condition.signal
         end
 
         def add(notification_id, callback)

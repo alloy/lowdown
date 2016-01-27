@@ -2,32 +2,76 @@ require "celluloid/current"
 
 module Lowdown
   class Connection
-    # Monitors a connection, or a pool of connections, for exceptions and, if any, raises them on the caller thread.
-    #
-    class Monitor
-      def self.monitor(connection)
-        new(connection, Thread.current)
+    module Monitor
+      # The normal Celluloid::Future implementation expects an object that responds to `value`, when assigning the value
+      # via `#signal`:
+      #
+      # 1. https://github.com/celluloid/celluloid/blob/bb282f826c275c0d60d9591c1bb5b08798799cbe/lib/celluloid/future.rb#L106
+      # 2. https://github.com/celluloid/celluloid/blob/bb282f826c275c0d60d9591c1bb5b08798799cbe/lib/celluloid/future.rb#L96
+      #
+      # Besides that, this class provides a few more conveniences related to how we use this future.
+      #
+      class Condition < Celluloid::Future
+        Result = Struct.new(:value)
+
+        def signal(value = nil)
+          super(Result.new(value))
+        end
+
+        alias_method :wait, :value
       end
 
-      include Celluloid
-      trap_exit :connection_crashed
+      # @!group Overrides
 
-      def initialize(connection, caller_thread)
-        @caller_thread = caller_thread
-        if connection.respond_to?(:actors)
-          connection.actors.each(&method(:monitor_connection))
-        else
-          monitor_connection(connection)
+      def initialize(*)
+        super
+        @lowdown_crash_conditions_mutex = Mutex.new
+        @lowdown_crash_conditions = []
+      end
+
+      # Send the exception to each of our conditions, to signal that an exception occurred on one of the actors in the
+      # pool.
+      #
+      # @param  [Actor] actor
+      # @param  [Exception] reason
+      # @return [void]
+      #
+      def __crash_handler__(actor, reason)
+        if reason # is nil if the actor exits normally
+          @lowdown_crash_conditions_mutex.synchronize do
+            @lowdown_crash_conditions.each { |condition| condition.signal(reason) }
+          end
+        end
+        super
+      end
+
+      # @!group Crash condition registration
+
+      # Adds a condition to the list of conditions to be notified when an actors dies because of an unhandled exception.
+      #
+      # @param  [Condition] condition
+      # @return [void]
+      #
+      def __register_lowdown_crash_condition__(condition)
+        @lowdown_crash_conditions_mutex.synchronize do
+          @lowdown_crash_conditions << condition
         end
       end
 
-      def monitor_connection(connection)
-        link connection
-      end
-
-      def connection_crashed(connection, exception)
-        @caller_thread.raise(exception) if exception
+      # Removes a condition from the list of conditions that get notified when an actor dies because of an unhandled
+      # exception.
+      #
+      # @param  [Condition] condition
+      # @return [void]
+      #
+      def __deregister_lowdown_crash_condition__(condition)
+        @lowdown_crash_conditions_mutex.synchronize do
+          @lowdown_crash_conditions.delete(condition)
+        end
       end
     end
+
+    # Prepend to ensure our overrides are called first.
+    Celluloid::Supervision::Container::Pool.send(:prepend, Monitor)
   end
 end
