@@ -51,9 +51,13 @@ module Lowdown
   # It manages both the SSL connection and processing of the HTTP/2 data sent back and forth over that connection.
   #
   class Connection
-    MAX_CONNECT_RETRIES = 5
+    class TimedOut < StandardError; end
+
+    CONNECT_RETRIES       = 5
     CONNECT_RETRY_BACKOFF = 5
-    CONNECT_TIMEOUT = 10
+    CONNECT_TIMEOUT       = 10
+    HEARTBEAT_INTERVAL    = 10
+    HEARTBEAT_TIMEOUT     = CONNECT_TIMEOUT
 
     include Celluloid::IO
     include Celluloid::Internals::Logger
@@ -103,21 +107,34 @@ module Lowdown
     #
     def disconnect
       @connection.close if @connection
-      @ping_timer.cancel if @ping_timer
+      @heartbeat.cancel if @heartbeat
       reset_state!
     end
 
-    # This performs a HTTP/2 PING to determine if the connection is actually alive. Be sure to not call this on a
-    # sleeping connection, or it will be guaranteed to fail.
-    #
-    # @param  [Numeric] timeout
-    #         the maximum amount of time to wait for the service to reply to the PING.
-    #
     # @return [Boolean]
     #         whether or not the Connection is open.
     #
     def connected?
       !@connection.nil? && !@connection.closed?
+    end
+
+    # This performs a HTTP/2 PING to determine if the connection is actually alive. Be sure to not call this on a
+    # sleeping connection, or it will be guaranteed to fail.
+    #
+    # @note   This halts the caller thread until a reply is received. You should call this on a future and possibly set
+    #         a timeout.
+    #
+    # @return [Boolean]
+    #         whether or not a reply was received.
+    #
+    def ping
+      if connected?
+        condition = Celluloid::Condition.new
+        @http.ping("whatever") { condition.signal(true) }
+        condition.wait
+      else
+        false
+      end
     end
 
     private
@@ -140,8 +157,10 @@ module Lowdown
       end
 
       @connection = SSLSocket.new(socket, @ssl_context)
-      timeout(CONNECT_TIMEOUT) do
-        @connection.connect
+      begin
+        timeout(CONNECT_TIMEOUT) { @connection.connect }
+      rescue Celluloid::TimedOut
+        raise TimedOut, "Initiating SSL socket timed-out."
       end
 
       @http = HTTP2::Client.new
@@ -160,10 +179,10 @@ module Lowdown
       # goes into a bad state if a connection crashes on initialization.
       @connection.close if @connection && !@connection.closed?
       @connection = @http = nil
-      if tries < MAX_CONNECT_RETRIES
+      if tries < CONNECT_RETRIES
         tries += 1
         delay = tries * CONNECT_RETRY_BACKOFF
-        error("#{e.class}: #{e.message} - retrying in #{delay} seconds (#{tries}/#{MAX_CONNECT_RETRIES})")
+        error("#{e.class}: #{e.message} - retrying in #{delay} seconds (#{tries}/#{CONNECT_RETRIES})")
         after(delay) { async.connect!(tries) }
         return
       else
@@ -175,7 +194,7 @@ module Lowdown
       @connecting = false
       @connected = false
       @request_queue = []
-      @connection = @http = @ping_timer = nil
+      @connection = @http = @heartbeat = nil
     end
 
     # The main IO runloop that feeds data from the remote service into the HTTP/2 client.
@@ -209,10 +228,21 @@ module Lowdown
     def change_to_connected_state
       @max_stream_count = @http.remote_settings[:settings_max_concurrent_streams]
       @connected = true
+
       debug "APNS connection established. Maximum number of concurrent streams: #{@max_stream_count}. " \
             "Flushing #{@request_queue.size} enqueued requests."
+
       @request_queue.size.times do
         async.try_to_perform_request!
+      end
+
+      @heartbeat = every(HEARTBEAT_INTERVAL) do
+        debug "Sending heartbeat ping"
+        begin
+          future.ping.call(HEARTBEAT_TIMEOUT)
+        rescue Celluloid::TimedOut
+          raise TimedOut, "Heartbeat ping timed-out."
+        end
       end
     end
 

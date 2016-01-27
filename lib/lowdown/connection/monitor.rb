@@ -39,7 +39,9 @@ module Lowdown
       def __crash_handler__(actor, reason)
         if reason # is nil if the actor exits normally
           @lowdown_crash_conditions_mutex.synchronize do
-            @lowdown_crash_conditions.each { |condition| condition.signal(reason) }
+            @lowdown_crash_conditions.each do |condition|
+              condition.signal(reason) unless condition.ready?
+            end
           end
         end
         super
