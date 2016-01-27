@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Lowdown
   # An object that represents a response from the Apple Push Notification service for a single notification delivery.
   #
