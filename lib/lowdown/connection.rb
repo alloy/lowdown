@@ -1,14 +1,10 @@
 require "lowdown/response"
 
-require "http/2"
-
-require "openssl"
-require "socket"
-require "timeout"
 require "uri"
 
 require "celluloid/current"
 require "celluloid/io"
+require "http/2"
 
 if HTTP2::VERSION == "0.8.0"
   # @!visibility private
