@@ -4,7 +4,7 @@
 
 [![Build Status](https://travis-ci.org/alloy/lowdown.svg?branch=master)](https://travis-ci.org/alloy/lowdown)
 
-NOTE: _This is not battle-tested yet. This will follow over the next few weeks._
+⚠︎ NOTE: _This is not battle-tested yet, which will follow over the next few weeks. A v1 will be released at that time._
 
 Lowdown is a Ruby client for the HTTP/2 version of the Apple Push Notification Service.
 
