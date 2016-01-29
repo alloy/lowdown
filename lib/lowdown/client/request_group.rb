@@ -2,9 +2,12 @@ require "celluloid/current"
 
 module Lowdown
   class Client
-    # Implements the {Connection::DelegateProtocol} to provide a more traditional blocks-based callback mechanism.
+    # Implements the {Connection::DelegateProtocol} to provide a way to group requests and hal the caller thread while
+    # waiting for the responses to come in. In addition to the regular delegate message based callbacks, it also allows
+    # for a more traditional blocks-based callback mechanism.
     #
-    # It proxies requests to a client, stores the request callbacks, and performs those once a response is available.
+    # @note These callbacks are executed on a separate thread, so be aware about this when accessing shared resources
+    #       from a block callback.
     #
     class RequestGroup
       attr_reader :callbacks
@@ -14,9 +17,12 @@ module Lowdown
         @callbacks = Callbacks.new(condition)
       end
 
-      def send_notification(notification, context: nil, &callback)
+      def send_notification(notification, delegate: nil, context: nil, &block)
         return unless @callbacks.alive?
-        @callbacks.add(notification.formatted_id, callback)
+        if (block.nil? && delegate.nil?) || (block && delegate)
+          raise ArgumentError, "Either a delegate object or a block should be provided."
+        end
+        @callbacks.add(notification.formatted_id, block || delegate)
         @client.send_notification(notification, delegate: @callbacks.async, context: context)
       end
 
@@ -46,7 +52,12 @@ module Lowdown
         end
 
         def handle_apns_response(response, context:)
-          @callbacks.delete(response.id).call(response, context)
+          callback = @callbacks.delete(response.id)
+          if callback.is_a?(Proc)
+            callback.call(response, context)
+          else
+            callback.send(:handle_apns_response, response, context: context)
+          end
         ensure
           @condition.signal if @callbacks.empty?
         end

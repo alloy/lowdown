@@ -25,7 +25,19 @@ module Lowdown
       @group.terminate
     end
 
-    it "performs the callback" do
+    it "performs a message callback" do
+      performed = false
+      delegate = Object.new
+      delegate.define_singleton_method(:handle_apns_response) do |_, __|
+        sleep 0.1 # test that flush works
+        performed = true
+      end
+      @group.send_notification(@notification, delegate: delegate)
+      @condition.wait(1)
+      performed.must_equal true
+    end
+
+    it "performs a block callback" do
       performed = false
       @group.send_notification(@notification) do
         sleep 0.1 # test that flush works
