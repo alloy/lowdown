@@ -37,6 +37,17 @@ module Lowdown
       new(certificate, key)
     end
 
+    # A convenience method that initializes a Certificate with the certificate and key from a SSL context object.
+    #
+    # @param  [OpenSSL::SSL::SSLContext] context
+    #         the context from which to initialize a Certificate.
+    #
+    # @return (see Certificate#initialize)
+    #
+    def self.from_ssl_context(context)
+      new(context.cert, context.key)
+    end
+
     # @param  [OpenSSL::X509::Certificate] certificate
     #         the Apple Push Notification certificate.
     #
@@ -66,6 +77,13 @@ module Lowdown
     #
     def to_pem
       [@key, @certificate].compact.map(&:to_pem).join("\n")
+    end
+
+    # @return [Boolean]
+    #         whether or not this Certificate is equal in contents to another Certificate.
+    #
+    def ==(other)
+      other.is_a?(Certificate) && other.to_pem == to_pem
     end
 
     # @return [OpenSSL::SSL::SSLContext]

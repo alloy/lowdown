@@ -55,10 +55,11 @@ module Lowdown
     # @return [Client]
     #         a Client configured with the `uri` and a self-signed certificate that has the `app_bundle_id` encoded.
     #
-    def self.client(uri: nil, app_bundle_id: "com.example.MockApp")
+    def self.client(uri: nil, app_bundle_id: "com.example.MockApp", keep_alive: false)
       certificate = certificate(app_bundle_id)
-      connection = Connection.new(uri: uri, ssl_context: certificate.ssl_context)
-      Client.client_with_connection(connection, certificate)
+      connection = Connection.new(uri, certificate.ssl_context, keep_alive)
+      connection.connect if keep_alive
+      Client.client_with_connection(connection, certificate: certificate)
     end
 
     # A mock object that can be used instead of a real Connection object.
@@ -80,12 +81,23 @@ module Lowdown
       #
       attr_reader :responses
 
+      # @return [Boolean]
+      #         whether or not the connection should be opened on initialization. In a pool this basically equals the
+      #         `keep_alive` Client option.
+      #
+      attr_reader :pool_keep_alive
+
+      # @return [Fixnum]
+      #         the number of workers in a pool.
+      #
+      attr_accessor :pool_size
+
       # @!group Mock API: Instance Method Summary
 
       # @param (see Lowdown::Connection#initialize)
       #
-      def initialize(uri: nil, ssl_context: nil)
-        @uri, @ssl_context = uri, ssl_context
+      def initialize(uri = nil, ssl_context = nil, connect = true)
+        @uri, @ssl_context, @pool_keep_alive = uri, ssl_context, connect
         @responses = []
         @requests = []
       end
@@ -119,6 +131,12 @@ module Lowdown
       attr_reader :ssl_context
 
       # @!group Celluloid API
+
+      def self.pool(size:, args:)
+        connection = new(*args)
+        connection.pool_size = size
+        connection
+      end
 
       def async
         self

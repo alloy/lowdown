@@ -1,8 +1,6 @@
 require "test_helper"
 require "lowdown/mock"
 
-require "weakref"
-
 module Lowdown
   describe Client do
     describe "concerning initialization" do

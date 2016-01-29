@@ -43,12 +43,15 @@ module Lowdown
     #         when `true` this will make connections, new and restarted, immediately connect to the remote service. Use
     #         this if you want to keep connections open indefinitely.
     #
+    # @param  [Class] connection_class
+    #         the connection class to instantiate, this can for instan be {Mock::Connection} during testing.
+    #
     # @raise  [ArgumentError]
     #         raised if the provided Certificate does not support the requested environment.
     #
     # @return (see Client#initialize)
     #
-    def self.production(production, certificate:, pool_size: 1, keep_alive: false)
+    def self.production(production, certificate:, pool_size: 1, keep_alive: false, connection_class: Connection)
       certificate = Certificate.certificate(certificate)
       if production
         unless certificate.production?
@@ -62,7 +65,8 @@ module Lowdown
       client(uri: production ? PRODUCTION_URI : DEVELOPMENT_URI,
              certificate: certificate,
              pool_size: pool_size,
-             keep_alive: keep_alive)
+             keep_alive: keep_alive,
+             connection_class: connection_class)
     end
 
     # Creates a connection pool that connects to the specified `uri`.
@@ -80,11 +84,15 @@ module Lowdown
     #         when `true` this will make connections, new and restarted, immediately connect to the remote service. Use
     #         this if you want to keep connections open indefinitely.
     #
+    # @param  [Class] connection_class
+    #         the connection class to instantiate, this can for instan be {Mock::Connection} during testing.
+    #
     # @return (see Client#initialize)
     #
-    def self.client(uri:, certificate:, pool_size: 1, keep_alive: false)
+    def self.client(uri:, certificate:, pool_size: 1, keep_alive: false, connection_class: Connection)
       certificate = Certificate.certificate(certificate)
-      connection_pool = Connection.pool(size: pool_size, args: [uri, certificate.ssl_context, keep_alive])
+      connection_class ||= Connection
+      connection_pool = connection_class.pool(size: pool_size, args: [uri, certificate.ssl_context, keep_alive])
       client_with_connection(connection_pool, certificate: certificate)
     end
 

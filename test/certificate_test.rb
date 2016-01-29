@@ -16,6 +16,11 @@ module Lowdown
       certificate.certificate.to_pem.must_equal @cert.to_pem
     end
 
+    it "initializes with a OpenSSL context" do
+      certificate = Certificate.from_ssl_context(@certificate.ssl_context)
+      certificate.must_equal @certificate
+    end
+
     it "returns a configured OpenSSL context" do
       @certificate.ssl_context.key.must_equal @key
       @certificate.ssl_context.cert.must_equal @cert

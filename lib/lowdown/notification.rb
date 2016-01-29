@@ -17,6 +17,11 @@ module Lowdown
       end
     end
 
+    def self.format_id(id)
+      padded = id.to_s.rjust(32, "0")
+      [padded[0, 8], padded[8, 4], padded[12, 4], padded[16, 4], padded[20, 12]].join("-")
+    end
+
     # @return [String]
     #         a device token.
     #
@@ -73,10 +78,7 @@ module Lowdown
     #         the formatted ID.
     #
     def formatted_id
-      @formatted_id ||= begin
-        padded = id.to_s.rjust(32, "0")
-        [padded[0, 8], padded[8, 4], padded[12, 4], padded[16, 4], padded[20, 12]].join("-")
-      end
+      @formatted_id ||= self.class.format_id(id)
     end
 
     # Unless the payload contains an `aps` entry, the payload is assumed to be a mix of APN defined attributes and
