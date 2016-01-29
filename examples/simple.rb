@@ -3,7 +3,7 @@ require "lowdown"
 
 cert_file, environment, device_token = ARGV.first(3)
 unless cert_file && environment && device_token
-  puts "Usage: {$PROGRAM_NAME} path/to/cert.pem [production|development] device-token"
+  puts "Usage: #{$PROGRAM_NAME} path/to/cert.pem [production|development] device-token"
   exit 1
 end
 
@@ -18,9 +18,9 @@ Celluloid.logger.level = Logger::ERROR
 start = nil
 
 # The block form of Client#connect flushes and closes the connection at the end of the block.
-Lowdown::Client.production(production, certificate: File.read(cert_file), pool_size: 3).connect do |group|
+Lowdown::Client.production(production, certificate: File.read(cert_file), pool_size: 2).connect do |group|
   start = Time.now
-  601.times do
+  600.times do
     notification = Lowdown::Notification.new(:token => device_token)
     notification.payload = { :alert => "Hello HTTP/2! ID=#{notification.id}" }
     group.send_notification(notification) do |response|

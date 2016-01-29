@@ -4,7 +4,7 @@ require "logger"
 
 cert_file, environment, device_token = ARGV.first(3)
 unless cert_file && environment && device_token
-  puts "Usage: {$PROGRAM_NAME} path/to/cert.pem [production|development] device-token"
+  puts "Usage: #{$PROGRAM_NAME} path/to/cert.pem [production|development] device-token"
   exit 1
 end
 
