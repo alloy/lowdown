@@ -161,7 +161,7 @@ increase this with the `pool_size` option:
 Lowdown::Client.production(true, File.read("path/to/certificate.pem"), pool_size: 3)
 ```
 
-## ☞
+## Related tool ☞
 
 Also checkout [this library](https://github.com/alloy/time_zone_scheduler) for scheduling across time zones.
 
