@@ -102,10 +102,9 @@ module Lowdown
     #         a formatted description of the response.
     #
     def to_s
-      s = "#{status} (#{message})"
-      s << ": #{failure_reason}" unless success?
-      s << " last checked at #{activity_last_checked_at}" if inactive_token?
-      s
+      reason = ": #{failure_reason}" unless success?
+      last_check = " last checked at #{activity_last_checked_at}" if inactive_token?
+      "#{status} (#{message})#{reason}#{last_check}"
     end
 
     # @return [String]

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 module Lowdown
   # A Notification holds the data and metadata about a Remote Notification.
   #

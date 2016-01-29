@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "lowdown/certificate"
 require "lowdown/client"
 require "lowdown/response"

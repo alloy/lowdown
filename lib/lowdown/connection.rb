@@ -1,3 +1,6 @@
+# This file can’t specify that it uses frozen string literals yet, because the strings’ encodings are modified when
+# passed to the http-2 gem.
+
 require "lowdown/response"
 
 require "uri"

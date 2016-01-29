@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "lowdown/client/request_group"
 require "lowdown/certificate"
 require "lowdown/connection"
