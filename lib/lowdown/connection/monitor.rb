@@ -14,8 +14,10 @@ module Lowdown
       class Condition < Celluloid::Future
         Result = Struct.new(:value)
 
+        # Only signal once.
+        #
         def signal(value = nil)
-          super(Result.new(value))
+          super(Result.new(value)) unless ready?
         end
 
         alias_method :wait, :value
@@ -40,7 +42,7 @@ module Lowdown
         if reason # is nil if the actor exits normally
           @lowdown_crash_conditions_mutex.synchronize do
             @lowdown_crash_conditions.each do |condition|
-              condition.signal(reason) unless condition.ready?
+              condition.signal(reason)
             end
           end
         end
