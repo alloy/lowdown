@@ -260,7 +260,7 @@ module Lowdown
       #         the Response that holds the status data that came back from the service.
       #
       # @param  [Object, nil] context
-      #         the context passed in when making the request.
+      #         the context passed in when making the request, which can be any type of object or an array of objects.
       #
       # @return [void]
       #
