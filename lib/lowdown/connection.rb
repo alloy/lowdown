@@ -63,8 +63,14 @@ module Lowdown
     HEARTBEAT_TIMEOUT     = CONNECT_TIMEOUT
 
     include Celluloid::IO
-    include Celluloid::Internals::Logger
     finalizer :disconnect
+
+    include Celluloid::Internals::Logger
+    %w(debug info warn error fatal unknown).each do |level|
+      define_method(level) do |message|
+        super("[APNS Connection##{"0x%x" % (object_id << 1)}] #{message}")
+      end
+    end
 
     # @param  [URI, String] uri
     #         the details to connect to the APN service.
@@ -109,7 +115,10 @@ module Lowdown
     # @return [void]
     #
     def disconnect
-      @connection.close if @connection
+      if @connection
+        info "Closing..."
+        @connection.close
+      end
       @heartbeat.cancel if @heartbeat
       reset_state!
     end
@@ -146,7 +155,7 @@ module Lowdown
       return if @connection
       @connecting = true
 
-      info "Opening APNS connection."
+      info "Connecting..."
 
       # Celluloid::IO::DNSResolver bug. In case there is no connection at all:
       # 1. This results in `nil`:
@@ -232,17 +241,18 @@ module Lowdown
       @max_stream_count = @http.remote_settings[:settings_max_concurrent_streams]
       @connected = true
 
-      debug "APNS connection established. Maximum number of concurrent streams: #{@max_stream_count}. " \
-            "Flushing #{@request_queue.size} enqueued requests."
+      info "Connection established."
+      debug "Maximum number of streams: #{@max_stream_count}. Flushing #{@request_queue.size} enqueued requests."
 
       @request_queue.size.times do
         async.try_to_perform_request!
       end
 
       @heartbeat = every(HEARTBEAT_INTERVAL) do
-        debug "Sending heartbeat ping"
+        debug "Sending heartbeat ping..."
         begin
           future.ping.call(HEARTBEAT_TIMEOUT)
+          debug "Got heartbeat reply."
         rescue Celluloid::TimedOut
           raise TimedOut, "Heartbeat ping timed-out."
         end
@@ -316,17 +326,17 @@ module Lowdown
 
     def try_to_perform_request!
       unless @connected
-        debug "Defer performing request, because the connection has not been established yet"
+        warn "Defer performing request, because the connection has not been established yet."
         return
       end
 
       unless @http.active_stream_count < @max_stream_count
-        debug "Defer performing request, because the maximum concurren stream count has been reached"
+        debug "Defer performing request, because the maximum concurren stream count has been reached."
         return
       end
 
       unless request = @request_queue.shift
-        debug "Defer performing request, because the request queue is empty"
+        debug "Defer performing request, because the request queue is empty."
         return
       end
 
