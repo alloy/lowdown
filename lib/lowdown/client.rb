@@ -181,9 +181,13 @@ module Lowdown
     # @return [void]
     #
     def disconnect
-      @connection.disconnect
-    rescue Celluloid::DeadActorError
-      # Rescue this exception instead of calling #alive? as that only works on an actor, not a pool.
+      if @connection.respond_to?(:actors)
+        @connection.actors.each do |connection|
+          connection.async.disconnect if connection.alive?
+        end
+      else
+        @connection.async.disconnect if @connection.alive?
+      end
     end
 
     # Use this to group a batch of requests and halt the caller thread until all of the requests in the group have been

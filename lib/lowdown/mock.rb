@@ -144,6 +144,10 @@ module Lowdown
         self
       end
 
+      def alive?
+        true
+      end
+
       # @!group Real API: Instance Method Summary
 
       # Yields stubbed {#responses} or if none are available defaults to success responses. It does this on a different
