@@ -74,6 +74,8 @@ end
 
 ### Persistent connection
 
+⚠︎ NOTE: _See the ‘Gotchas’ section, specifically about process forking._
+
 The trick to creating a persistent connection is to specify the `keep_alive: true` option when creating the client:
 
 ```ruby
@@ -159,6 +161,35 @@ increase this with the `pool_size` option:
 
 ```ruby
 Lowdown::Client.production(true, File.read("path/to/certificate.pem"), pool_size: 3)
+```
+
+## Gotchas
+
+* If you’re forking your process, be sure to **not** load lowdown before forking (because this does not work well with
+  Celluloid).
+
+  Forking is done by, e.g. DelayedJob, when daemonizing workers. In practice, this means that e.g. you should not
+  initialize a client from a Rails initializer, but rather do it lazily when it’s really required. E.g.:
+
+```ruby
+class PushNotificationService
+  def initialize(certificate_path)
+    @certificate_path = certificate_path
+    @client_mutex = Mutex.new
+  end
+
+  def client
+    client = nil
+    @client_mutex.synchronize do
+      @client ||= Lowdown::Client.production(true, File.read(certificate_path), keep_alive: true)
+      client = @client
+    end
+    client
+  end
+end
+
+# In your initializer:
+PUSH_NOTIFICATION_SERVICE = PushNotificationService.new("path/to/certificate.pem")
 ```
 
 ## Related tool ☞
