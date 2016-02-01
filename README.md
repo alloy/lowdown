@@ -134,7 +134,7 @@ Keep in mind that, like with the block version, this message is sent on the grou
 
 While we’re on the topic of threading anyways, here’s an important thing to keep in mind; each set of `group` callbacks
 is performed on its own thread. It is thus _your_ responsibility to take this into account. E.g. if you are planning to
-update a DB model with the status of a notification delivery, be sure to respect the treading rules of your DB client,
+update a DB model with the status of a notification delivery, be sure to respect the threading rules of your DB client,
 which usually means to not re-use models that were loaded on a different thread.
 
 A simple approach to this is by passing the data you need to be able to update the DB as a `context`, which can be any
