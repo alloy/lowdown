@@ -44,9 +44,6 @@ loop do
       end
     end.each(&:join)
 
-    logger.info "Sleep for 5 seconds"
-    sleep(5)
-
   rescue Interrupt
     logger.info "[!] Interrupt, exiting"
     break
@@ -54,8 +51,11 @@ loop do
   rescue Exception => e
     logger.error "[!] Exception occurred, re-trying in 1 second: #{e.inspect}\n\t#{e.backtrace.join("\n\t")}"
     sleep 1
-    redo
   end
+
+  GC.start
+  logger.info "Sleep for 5 seconds"
+  sleep(5)
 end
 
 client.disconnect

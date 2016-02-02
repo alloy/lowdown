@@ -14,31 +14,34 @@ production = environment == "production"
 Celluloid.logger.level = Logger::INFO
 # Celluloid.logger.level = Logger::ERROR
 
-# Connection time can take a while, just count the time it takes to connect.
-start = nil
-time = 0
-
 client = Lowdown::Client.production(production, certificate: File.read(cert_file), pool_size: 2)
 
 # The block form of Client#connect flushes and closes the connection at the end of the block.
-4.times do
-  client.connect do |group|
-    start = Time.now
-    600.times do
-      notification = Lowdown::Notification.new(:token => device_token)
-      notification.payload = { :alert => "Hello HTTP/2! ID=#{notification.id}" }
-      group.send_notification(notification) do |response|
-        if response.success?
-          puts "Sent notification with ID: #{notification.id}"
-        else
-          puts "[!] (##{response.id}): #{response}"
+loop do
+  begin
+    client.connect do |group|
+      600.times do
+        notification = Lowdown::Notification.new(:token => device_token)
+        notification.payload = { :alert => "Hello HTTP/2! ID=#{notification.id}" }
+        group.send_notification(notification) do |response|
+          if response.success?
+            puts "Sent notification with ID: #{notification.id}"
+          else
+            puts "[!] (##{response.id}): #{response}"
+          end
         end
       end
     end
-    time += Time.now - start
-  end
-  sleep 3
-end
+  rescue Interrupt
+    puts "[!] Interrupt, exiting"
+    break
 
-puts "Finished in #{Time.now - start} seconds"
+  rescue Exception => e
+    puts "[!] Error occurred: #{e.message}"
+  end
+
+  GC.start
+  puts "Sleep for 5 seconds"
+  sleep(5)
+end
 
