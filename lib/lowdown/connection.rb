@@ -326,8 +326,13 @@ module Lowdown
 
     def try_to_perform_request!
       unless @connected
-        warn "Defer performing request, because the connection has not been established yet."
+        unless @warned_about_not_connected
+          warn "Defer performing request, because the connection has not been established yet."
+          @warned_about_not_connected = true
+        end
         return
+      else
+        @warned_about_not_connected = false
       end
 
       unless @http.active_stream_count < @max_stream_count
