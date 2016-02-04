@@ -165,11 +165,13 @@ Lowdown::Client.production(true, File.read("path/to/certificate.pem"), pool_size
 
 ## Gotchas
 
-* If you’re forking your process, be sure to **not** load lowdown before forking (because this does not work well with
-  Celluloid).
+* If you’re forking your process, be sure to **not** load lowdown before forking (because this [does not work well with
+  Celluloid](https://github.com/celluloid/celluloid/wiki/Gotchas#do-not-create-actors-prior-to-forking-the-process), or
+  with threading and Ruby in general).
 
-  Forking is done by, e.g. DelayedJob, when daemonizing workers. In practice, this means that e.g. you should not
-  initialize a client from a Rails initializer, but rather do it lazily when it’s really required. E.g.:
+  Forking is done by, e.g. [Spring][spring] and [DelayedJob][delayed_job], when daemonizing workers. In practice, this
+  means that e.g. you should not initialize a client from a Rails initializer, but rather do it lazily when it’s really
+  required. E.g.:
 
 ```ruby
 class PushNotificationService
@@ -208,3 +210,6 @@ The gem is available as open source under the terms of the [MIT License](http://
 [notification]: http://www.rubydoc.info/gems/lowdown/Lowdown/Notification
 [group]: http://www.rubydoc.info/gems/lowdown/Lowdown/RequestGroup
 [delegate]: http://www.rubydoc.info/gems/lowdown/Lowdown/Connection/DelegateProtocol
+
+[spring]: https://github.com/rails/spring
+[delayed_job]: https://github.com/collectiveidea/delayed_job
