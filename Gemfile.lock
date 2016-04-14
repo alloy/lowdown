@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    lowdown (0.3.1)
+    lowdown (0.3.2)
       celluloid-io (>= 0.17.3)
       http-2 (>= 0.8)
 
