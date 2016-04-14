@@ -9,17 +9,17 @@ require "celluloid/current"
 require "celluloid/io"
 require "http/2"
 
-if HTTP2::VERSION == "0.8.0"
+# @!visibility private
+#
+module HTTP2
   # @!visibility private
   #
-  module HTTP2
-    # @!visibility private
-    #
-    # This monkey-patch ensures that we send the HTTP/2 connection preface before anything else.
-    #
-    # @see https://github.com/igrigorik/http-2/pull/44
-    #
-    class Client
+  # This monkey-patch ensures that we send the HTTP/2 connection preface before anything else.
+  #
+  # @see https://github.com/igrigorik/http-2/pull/44
+  #
+  class Client
+    unless method_defined?(:connection_management)
       def connection_management(frame)
         if @state == :waiting_connection_preface
           send_connection_preface
@@ -29,7 +29,9 @@ if HTTP2::VERSION == "0.8.0"
         end
       end
     end
+  end
 
+  if HTTP2::VERSION == "0.8.0"
     # @!visibility private
     #
     # These monkey-patches ensure that data added to a buffer has a binary encoding, as to not lead to encoding clashes.
