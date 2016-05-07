@@ -27,7 +27,7 @@ module Lowdown
       cert.not_after  = cert.not_before + 3600
       cert.public_key = key.public_key
       cert.serial = OpenSSL::BN.new(1)
-      cert.issuer = OpenSSL::X509::Name.parse('CN=nobody/DC=example')
+      cert.issuer = OpenSSL::X509::Name.parse("CN=nobody/DC=example")
       cert.sign(key, OpenSSL::Digest::SHA1.new)
 
       # Make it a Universal Certificate
