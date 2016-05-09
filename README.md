@@ -163,6 +163,23 @@ increase this with the `pool_size` option:
 Lowdown::Client.production(true, File.read("path/to/certificate.pem"), pool_size: 3)
 ```
 
+### Connect to APNS via proxy
+
+`Lowdown::Connection#initialize` accepts a lambda to build TCPSocket. Build a duck type of TCPSocket which go through proxy.
+
+```ruby
+socket_maker = lambda do |uri|
+  Proxifier::Proxy('http://127.0.0.1:3128').open \
+    uri.host, uri.port, nil, nil, Celluloid::IO::TCPSocket
+end
+
+connection_pool = Lowdown::Connection.pool \
+  size: 2,
+  args: [uri, cert.ssl_context, true, socket_maker]
+
+client = Lowdown::Client.client_with_connection connection_pool, certificate: cert
+```
+
 ## Gotchas
 
 * If you’re forking your process, be sure to **not** load lowdown before forking (because this [does not work well with

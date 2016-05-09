@@ -83,8 +83,25 @@ module Lowdown
     # @param  [Boolean] connect
     #         whether or not to immediately connect on initialization.
     #
-    def initialize(uri, ssl_context, connect = true)
+    # @param [lambda] socket_maker
+    #        a lambda takes uri and returns duck type of TCPSocket
+    #        e.g.:
+    #
+    # @example Use `socket_maker` argument with modified ruby-proxifier
+    #   socket_maker = lambda do |uri|
+    #     Proxifier::Proxy('http://127.0.0.1:3128').open \
+    #     uri.host, uri.port, nil, nil, Celluloid::IO::TCPSocket
+    #   end
+    #
+    #   connection_pool = Lowdown::Connection.pool \
+    #     size: 2,
+    #     args: [uri, cert.ssl_context, true, socket_maker]
+    #
+    #   client = Lowdown::Client.client_with_connection connection_pool, certificate: cert
+    #
+    def initialize(uri, ssl_context, connect = true, socket_maker = nil)
       @uri, @ssl_context = URI(uri), ssl_context
+      @socket_maker = socket_maker
       reset_state!
 
       if connect
@@ -165,7 +182,11 @@ module Lowdown
       # 2. This tries to `NilClass#send` the hostname:
       #    https://github.com/celluloid/celluloid-io/blob/85cee9da22ef5e94ba0abfd46454a2d56572aff4/lib/celluloid/io/dns_resolver.rb#L44
       begin
-        socket = TCPSocket.new(@uri.host, @uri.port)
+        socket = if @socket_maker.respond_to? :call
+                   @socket_maker.call @uri
+                 else
+                   TCPSocket.new(@uri.host, @uri.port)
+                 end
       rescue NoMethodError
         raise SocketError, "(Probably) getaddrinfo: nodename nor servname provided, or not known"
       end

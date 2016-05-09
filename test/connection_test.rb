@@ -113,7 +113,48 @@ module Lowdown
           @response.id.end_with?("42").must_equal true
         end
       end
-    end
+    end # with a connection
+
+    describe "inject duck type of TCPSocket" do
+      it "uses the injected socket instance" do
+        socket_maker = Minitest::Mock.new
+        socket_maker.expect :call,
+                            Celluloid::IO::TCPSocket.new(server.uri.host,
+                                                         server.uri.port),
+                            [server.uri]
+        @connection = Connection.new(server.uri, @ssl_context, false, socket_maker)
+        @connection.connect
+      end
+
+      # copied from case 'with a connection'
+      describe "when making a request" do
+        before do
+          socket_maker = -> (uri) { Celluloid::IO::TCPSocket.new uri.host, uri.port }
+          @connection = Connection.new(server.uri, @ssl_context, false, socket_maker)
+          @connection.connect
+
+          # copied from case 'with a connection'
+          #
+          # TODO: Figure out what’s going wrong so this isn’t needed.
+          #
+          @connection.async.send(:change_to_connected_state)
+
+          @delegate = MockDelegate.new
+
+          @connection.async.post(path: "/3/device/some-device-token",
+                                 headers: { "apns-id" => 42 },
+                                 body: "♥",
+                                 delegate: @delegate)
+          @response = @delegate.condition.wait
+          @request = server.requests.last
+        end
+
+        it "yields the response" do
+          @response.status.must_equal 200
+          @response.id.end_with?("42").must_equal true
+        end
+      end
+    end # inject duck type of TCPSocket
   end
 end
 
