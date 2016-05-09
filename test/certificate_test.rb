@@ -47,7 +47,7 @@ module Lowdown
         @cert.extensions = []
       end
 
-      it "returns that it’s not a universal certificate" do
+      it "returns that it's not a universal certificate" do
         @certificate.universal?.must_equal false
       end
 
@@ -69,7 +69,7 @@ module Lowdown
         @cert.extensions = [OpenSSL::X509::Extension.new(Certificate::UNIVERSAL_CERTIFICATE_EXTENSION, value)]
       end
 
-      it "returns that it’s a universal certificate" do
+      it "returns that it's a universal certificate" do
         @certificate.universal?.must_equal true
       end
 
