@@ -86,18 +86,18 @@ module Lowdown
     # @param [lambda] socket_maker
     #        a lambda takes uri and returns duck type of TCPSocket
     #        e.g.:
-    #        ```
-    #        socket_maker = lambda do |uri|
-    #          Proxifier::Proxy('http://127.0.0.1:3128').open \
-    #          uri.host, uri.port, nil, nil, Celluloid::IO::TCPSocket
-    #        end
     #
-    #        connection_pool = Lowdown::Connection.pool \
-    #          size: 2,
-    #          args: [uri, cert.ssl_context, true, socket_maker]
+    # @example Use `socket_maker` argument with modified ruby-proxifier
+    #   socket_maker = lambda do |uri|
+    #     Proxifier::Proxy('http://127.0.0.1:3128').open \
+    #     uri.host, uri.port, nil, nil, Celluloid::IO::TCPSocket
+    #   end
     #
-    #        client = Lowdown::Client.client_with_connection connection_pool, certificate: cert
-    #        ```
+    #   connection_pool = Lowdown::Connection.pool \
+    #     size: 2,
+    #     args: [uri, cert.ssl_context, true, socket_maker]
+    #
+    #   client = Lowdown::Client.client_with_connection connection_pool, certificate: cert
     #
     def initialize(uri, ssl_context, connect = true, socket_maker = nil)
       @uri, @ssl_context = URI(uri), ssl_context
