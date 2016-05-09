@@ -211,6 +211,8 @@ end
 PUSH_NOTIFICATION_SERVICE = PushNotificationService.new("path/to/certificate.pem")
 ```
 
+* It's reported not working with spring and Rails 4.2.5 ([issue #9](https://github.com/alloy/lowdown/issues/9)) even when creating Lowdown::Client instance after forking, outside Rails initializer, e.g. in Rails console.
+
 ## Related tool ☞
 
 Also checkout [this library](https://github.com/alloy/time_zone_scheduler) for scheduling across time zones.
