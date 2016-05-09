@@ -223,7 +223,7 @@ module Lowdown
         end
       end
     ensure
-      group.try :terminate
+      group.terminate
     end
 
     # Registers a condition object with the connection pool, for the duration of the given block. It either returns an
