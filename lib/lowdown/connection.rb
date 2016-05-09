@@ -182,7 +182,11 @@ module Lowdown
       # 2. This tries to `NilClass#send` the hostname:
       #    https://github.com/celluloid/celluloid-io/blob/85cee9da22ef5e94ba0abfd46454a2d56572aff4/lib/celluloid/io/dns_resolver.rb#L44
       begin
-        socket = @socket_maker.try(:call, @uri) || TCPSocket.new(@uri.host, @uri.port)
+        socket = if @socket_maker.respond_to? :call
+                   @socket_maker.call @uri
+                 else
+                   TCPSocket.new(@uri.host, @uri.port)
+                 end
       rescue NoMethodError
         raise SocketError, "(Probably) getaddrinfo: nodename nor servname provided, or not known"
       end
