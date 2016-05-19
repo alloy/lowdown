@@ -126,8 +126,9 @@ module Lowdown
     #
     def topics
       if universal?
-        components = extension(UNIVERSAL_CERTIFICATE_EXTENSION).value.split(/0?\.{2,}/)
-        components.select.with_index { |_, index| index.odd? }
+        ext = extension(UNIVERSAL_CERTIFICATE_EXTENSION)
+        seq = OpenSSL::ASN1.decode(OpenSSL::ASN1.decode(ext.to_der).value[1].value)
+        seq.select.with_index { |_, index| index.even? }.map(&:value)
       else
         [app_bundle_id]
       end

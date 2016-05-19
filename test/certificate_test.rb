@@ -60,13 +60,14 @@ module Lowdown
       parallelize_me!
 
       before do
-        value = %w(
-          0d
-          com.example.MockAPNS0...app
-          com.example.MockAPNS.voip0...voip
-          com.example.MockAPNS.complication0...complication
-        ).join("..")
-        @cert.extensions = [OpenSSL::X509::Extension.new(Certificate::UNIVERSAL_CERTIFICATE_EXTENSION, value)]
+        sequence = OpenSSL::ASN1::Sequence.new({
+          "com.example.MockAPNS" => "app",
+          "com.example.MockAPNS.voip" => "voip",
+          "com.example.MockAPNS.complication" => "complication",
+        }.map do |topic, purpose|
+          [OpenSSL::ASN1::UTF8String.new(topic), OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::UTF8String.new(purpose)])]
+        end.flatten)
+        @cert.extensions = [OpenSSL::X509::Extension.new(Certificate::UNIVERSAL_CERTIFICATE_EXTENSION, sequence.to_der)]
       end
 
       it "returns that it’s a universal certificate" do

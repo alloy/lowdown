@@ -30,7 +30,13 @@ module Lowdown
 
       # Make it a Universal Certificate
       ext_name = Lowdown::Certificate::UNIVERSAL_CERTIFICATE_EXTENSION
-      cert.extensions = [OpenSSL::X509::Extension.new(ext_name, "0d..#{app_bundle_id}0...app")]
+      ext_value = OpenSSL::ASN1::Sequence.new(
+        [
+          OpenSSL::ASN1::UTF8String.new(app_bundle_id),
+          OpenSSL::ASN1::Sequence.new([OpenSSL::ASN1::UTF8String.new("app")]),
+        ]
+      ).to_der
+      cert.extensions = [OpenSSL::X509::Extension.new(ext_name, ext_value)]
 
       [cert, key]
     end
