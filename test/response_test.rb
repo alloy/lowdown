@@ -37,7 +37,7 @@ module Lowdown
 
       before do
         @timestamp = Time.now
-        @response = Response.new({ ":status" => "410" }, { "timestamp" => @timestamp.to_i.to_s }.to_json)
+        @response = Response.new({ ":status" => "410" }, { "timestamp" => (@timestamp.to_i * 1000).to_s }.to_json)
       end
 
       it "returns that it concerns an inactive token" do

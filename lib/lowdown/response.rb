@@ -95,7 +95,7 @@ module Lowdown
     #         in case of an inactive token, the time at which the service last verified it.
     #
     def activity_last_checked_at
-      Time.at(body["timestamp"].to_i/1000) if inactive_token?
+      Time.at(body["timestamp"].to_i / 1000) if inactive_token?
     end
 
     # @return [String]
