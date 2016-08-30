@@ -66,7 +66,7 @@ After obtaining a client, the simplest way to open a connection for a short peri
 This will open the connection, yield the block, and close the connection by the end of the block:
 
 ```ruby
-client = Lowdown::Client.production(true, File.read("path/to/certificate.pem")
+client = Lowdown::Client.production(true, certificate: File.read("path/to/certificate.pem")
 client.connect do |group|
   # ...
 end
@@ -79,7 +79,7 @@ end
 The trick to creating a persistent connection is to specify the `keep_alive: true` option when creating the client:
 
 ```ruby
-client = Lowdown::Client.production(true, File.read("path/to/certificate.pem"), keep_alive: true)
+client = Lowdown::Client.production(true, certificate: File.read("path/to/certificate.pem"), keep_alive: true)
 
 # Send a batch of notifications
 client.group do |group|
@@ -160,7 +160,7 @@ connections to the remote service. By default Lowdown will initialize clients wi
 increase this with the `pool_size` option:
 
 ```ruby
-Lowdown::Client.production(true, File.read("path/to/certificate.pem"), pool_size: 3)
+Lowdown::Client.production(true, certificate: File.read("path/to/certificate.pem"), pool_size: 3)
 ```
 
 ### Connect to APNS via proxy
