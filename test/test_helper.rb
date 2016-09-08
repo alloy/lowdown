@@ -67,7 +67,7 @@ class MockAPNS
   end
 
   def uri
-    URI.parse("https://localhost:#{@ssl.addr[1]}")
+    URI.parse("https://127.0.0.1:#{@ssl.addr[1]}")
   end
 
   def pkey
