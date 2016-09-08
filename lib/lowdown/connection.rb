@@ -261,6 +261,8 @@ module Lowdown
     # @return [void]
     #
     def change_to_connected_state
+      return unless @http
+
       @max_stream_count = @http.remote_settings[:settings_max_concurrent_streams]
       @connected = true
 
