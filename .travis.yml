@@ -3,6 +3,6 @@ rvm:
   - 2.1.1
   - 2.1
   - 2.2
-  - 2.3.0
+  - 2.3.1
 before_install: gem install bundler
 install: bundle install --without doc
