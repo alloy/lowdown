@@ -22,7 +22,7 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = ">= 2.1.1"
 
   spec.add_runtime_dependency "http-2", ">= 0.8"
-  spec.add_runtime_dependency "celluloid-io", ">= 0.17.3" # has Ruby 2.3.0 support
+  spec.add_runtime_dependency "celluloid-io", "~> 0.16.1" # Ruby 2.2 support
 
   spec.add_development_dependency "bundler", "~> 1.11"
   spec.add_development_dependency "rake", "~> 10.0"
